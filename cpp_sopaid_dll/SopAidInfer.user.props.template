@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="UserMacros">
+    <!-- Copy this file to SopAidInfer.user.props and adjust paths for your machine. -->
+    <OpenCVRoot>E:\software\opencv\build</OpenCVRoot>
+    <OpenCVVersion>4130</OpenCVVersion>
+    <OpenCVIncludeDir>$(OpenCVRoot)\include</OpenCVIncludeDir>
+    <OpenCVLibDir>$(OpenCVRoot)\x64\vc16\lib</OpenCVLibDir>
+
+    <OnnxRuntimeRoot>E:\software\onnxruntime-gpu-windows-1.19.2</OnnxRuntimeRoot>
+    <OnnxRuntimeIncludeDir>E:\software\onnxruntime-nuget-1.19.2\build\native\include</OnnxRuntimeIncludeDir>
+    <OnnxRuntimeLibDir>$(OnnxRuntimeRoot)\runtimes\win-x64\native</OnnxRuntimeLibDir>
+    <OnnxRuntimeDll>$(OnnxRuntimeLibDir)\onnxruntime.dll</OnnxRuntimeDll>
+
+    <!-- Optional: enable these only when implementing the native TensorRT / LibTorch backends. -->
+    <TensorRTIncludeDir>E:\TensorRT-11.1.0.106\include</TensorRTIncludeDir>
+    <TensorRTLibDir>E:\TensorRT-11.1.0.106\lib</TensorRTLibDir>
+    <LibTorchIncludeDir>E:\libtorch\include;E:\libtorch\include\torch\csrc\api\include</LibTorchIncludeDir>
+    <LibTorchLibDir>E:\libtorch\lib</LibTorchLibDir>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,43 @@
+# Python runtime cache
+__pycache__/
+*.py[cod]
+
+# Python build artifacts and resumable dependency downloads
+build/
+dist/
+.downloads/
+*.spec.bak
+
+# Virtual environments and local IDE settings
+.venv/
+.idea/
+.vscode/
+.vs/
+cpp_sopaid_dll/SopAidInfer.user.props
+
+# C/C++ and Visual Studio build outputs
+cpp_sopaid_dll/bin/
+cpp_sopaid_dll/obj/
+cpp_sopaid_dll/x64/
+frontend/**/bin/
+frontend/**/obj/
+*.obj
+*.pdb
+*.iobj
+*.ipdb
+*.ilk
+*.exp
+*.lib
+
+# Local datasets, videos, model weights and generated results
+datasets/**
+videos/**
+models/**
+outputs/**
+runs/**
+
+# OS and editor temporary files
+.DS_Store
+Thumbs.db
+*.tmp
+*.log

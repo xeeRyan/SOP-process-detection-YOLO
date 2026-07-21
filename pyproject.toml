@@ -1,0 +1,36 @@
+[project]
+name = "sopaid"
+version = "0.1.0"
+description = "SOP video detection and packaging environment"
+requires-python = "==3.12.*"
+dependencies = [
+    "numpy==2.4.4",
+    "opencv-python==4.13.0.92",
+    "opencv-contrib-python==4.13.0.92",
+    "ultralytics==8.4.62",
+    "mediapipe==0.10.35",
+    "torch==2.12.0+cu126",
+    "torchvision==0.27.0+cu126",
+    "lap==0.5.13",
+    "onnx==1.16.2",
+    "onnxruntime==1.19.2",
+    "onnxslim==0.1.94",
+]
+
+[dependency-groups]
+build = [
+    "packaging>=24.2",
+    "pyinstaller==6.18.0",
+]
+
+[tool.uv]
+package = false
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu126" }
+torchvision = { index = "pytorch-cu126" }

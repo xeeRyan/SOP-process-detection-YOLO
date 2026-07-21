@@ -1,0 +1,20 @@
+{
+  "command": "detect",
+  "params": {
+    "video_path": "videos/sk.mp4",
+    "model_path": "models/best_yolo26s.pt",
+    "output_dir": "outputs/wpf_detect_test",
+    "hand_pose_model_path": "models/hand_landmarker.task",
+    "work_roi": [1115, 1132, 1648, 1522],
+    "screw_bin_roi": [1092, 505, 1410, 932],
+    "tool_home_roi": [782, 508, 1108, 930],
+    "enable_hand_pose": true,
+    "enable_yolo": true,
+    "confidence_threshold": 0.25,
+    "nms_threshold": 0.7,
+    "target_classes": ["bearing", "cover", "tool"],
+    "output_video": true,
+    "output_json": true,
+    "realtime_display": false
+  }
+}

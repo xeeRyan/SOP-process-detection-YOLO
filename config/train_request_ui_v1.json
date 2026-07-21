@@ -1,0 +1,29 @@
+{
+  "command": "train",
+  "params": {
+    "model": "models/yolo26s.pt",
+    "data": "datasets/sop/sop.yaml",
+    "project_dir": "runs",
+    "run_name": "sop_yolo26s_ui_exp",
+    "epochs": 100,
+    "batch": 8,
+    "imgsz": 640,
+    "device": null,
+    "optimizer": "auto",
+    "amp": true,
+    "val_ratio": 0.2,
+    "hsv_h": 0.015,
+    "hsv_s": 0.7,
+    "hsv_v": 0.4,
+    "degrees": 0.0,
+    "translate": 0.1,
+    "scale": 0.5,
+    "shear": 0.0,
+    "fliplr": 0.5,
+    "flipud": 0.0,
+    "mosaic": 1.0,
+    "mixup": 0.0,
+    "copy_paste": 0.0,
+    "copy_best_to": "models/best_yolo26s_ui_exp.pt"
+  }
+}

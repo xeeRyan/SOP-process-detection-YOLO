@@ -1,0 +1,112 @@
+<Window x:Class="SopAidTcpTester.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="SOPAID TCP Tester"
+        Width="980"
+        Height="720"
+        MinWidth="820"
+        MinHeight="560"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" BorderBrush="#D0D7DE" BorderThickness="1" CornerRadius="6" Padding="12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="110" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0" Text="Host" VerticalAlignment="Center" Margin="0,0,8,0" />
+                <TextBox Grid.Column="1" x:Name="HostTextBox" Text="127.0.0.1" Height="32" VerticalContentAlignment="Center" />
+                <TextBlock Grid.Column="2" Text="Port" VerticalAlignment="Center" Margin="12,0,8,0" />
+                <TextBox Grid.Column="3" x:Name="PortTextBox" Text="9000" Height="32" VerticalContentAlignment="Center" />
+                <Button Grid.Column="4" x:Name="HealthButton" Content="Health" Width="96" Height="32" Margin="12,0,0,0" Click="HealthButton_Click" />
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1" BorderBrush="#D0D7DE" BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,12,0,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Package Root" VerticalAlignment="Center" Margin="0,0,8,0" />
+                <TextBox Grid.Row="0" Grid.Column="1" x:Name="PackageRootTextBox" Height="32" VerticalContentAlignment="Center" />
+                <Button Grid.Row="0" Grid.Column="2" x:Name="StartServerButton" Content="Start Package Exe" Width="140" Height="32" Margin="12,0,0,0" Click="StartServerButton_Click" />
+                <Button Grid.Row="0" Grid.Column="3" x:Name="CloseServerButton" Content="Close Server" Width="110" Height="32" Margin="8,0,0,0" Click="CloseServerButton_Click" />
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="JSON File" VerticalAlignment="Center" Margin="0,12,8,0" />
+                <TextBox Grid.Row="1" Grid.Column="1" x:Name="JsonFileTextBox" Text="wpf_request.json" Height="32" VerticalContentAlignment="Center" Margin="0,12,0,0" />
+                <Button Grid.Row="1" Grid.Column="2" x:Name="SendModelFileButton" Content="Send model_file" Width="140" Height="32" Margin="12,12,0,0" Click="SendModelFileButton_Click" />
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="2" Margin="0,12,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <DockPanel Grid.Row="0" Grid.Column="0" Margin="0,0,8,8">
+                <TextBlock Text="Request JSON" VerticalAlignment="Center" />
+                <Button x:Name="SendJsonButton" Content="Send JSON" DockPanel.Dock="Right" Width="110" Height="32" Click="SendJsonButton_Click" />
+                <Button x:Name="LoadTrainButton" Content="Train" DockPanel.Dock="Right" Width="88" Height="32" Margin="0,0,8,0" Click="LoadTrainButton_Click" />
+                <Button x:Name="LoadDetectButton" Content="Detect" DockPanel.Dock="Right" Width="88" Height="32" Margin="0,0,8,0" Click="LoadDetectButton_Click" />
+                <Button x:Name="LoadHealthButton" Content="Health" DockPanel.Dock="Right" Width="88" Height="32" Margin="0,0,8,0" Click="LoadHealthButton_Click" />
+            </DockPanel>
+            <TextBox Grid.Row="1"
+                     Grid.Column="0"
+                     x:Name="RequestTextBox"
+                     Margin="0,0,8,0"
+                     AcceptsReturn="True"
+                     AcceptsTab="True"
+                     FontFamily="Consolas"
+                     FontSize="13"
+                     TextWrapping="NoWrap"
+                     VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Auto" />
+
+            <DockPanel Grid.Row="0" Grid.Column="1" Margin="8,0,0,8">
+                <TextBlock Text="Response / Log" VerticalAlignment="Center" />
+                <Button x:Name="ClearButton" Content="Clear" DockPanel.Dock="Right" Width="90" Height="32" Click="ClearButton_Click" />
+            </DockPanel>
+            <TextBox Grid.Row="1"
+                     Grid.Column="1"
+                     x:Name="ResponseTextBox"
+                     Margin="8,0,0,0"
+                     AcceptsReturn="True"
+                     FontFamily="Consolas"
+                     FontSize="13"
+                     IsReadOnly="True"
+                     TextWrapping="Wrap"
+                     VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Auto" />
+        </Grid>
+
+        <TextBlock Grid.Row="3"
+                   x:Name="StatusTextBlock"
+                   Text="Ready"
+                   Foreground="#57606A"
+                   Margin="0,12,0,0" />
+    </Grid>
+</Window>

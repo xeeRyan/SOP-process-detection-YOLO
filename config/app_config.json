@@ -1,0 +1,51 @@
+{
+  "tcp": {
+    "host": "0.0.0.0",
+    "port": 9000
+  },
+  "paths": {
+    "video_path": "videos/sk.mp4",
+    "model_path": "models/best_yolo26s.pt",
+    "output_dir": "outputs/yolo26s",
+    "hand_pose_model_path": "models/hand_landmarker.task"
+  },
+  "roi": {
+    "work": [
+      1115,
+      1132,
+      1648,
+      1522
+    ],
+    "screw_bin": [
+      1092,
+      505,
+      1410,
+      932
+    ],
+    "tool_home": [
+      782,
+      508,
+      1108,
+      930
+    ]
+  },
+  "hand_pose": {
+    "enabled": true,
+    "sample_interval": 30
+  },
+  "ai": {
+    "enable_yolo": true,
+    "confidence_threshold": 0.25,
+    "nms_threshold": 0.7,
+    "target_classes": [
+      "bearing",
+      "cover",
+      "tool"
+    ]
+  },
+  "output": {
+    "output_video": true,
+    "output_json": true,
+    "realtime_display": false
+  }
+}

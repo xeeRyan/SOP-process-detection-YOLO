@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{7F0D2D2E-6E45-4AB2-89E6-5287F74C0E2F}</ProjectGuid>
+    <RootNamespace>SopAidInfer</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="SopAidInfer.user.props" Condition="exists('SopAidInfer.user.props')" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="SopAidInfer.user.props" Condition="exists('SopAidInfer.user.props')" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <OutDir>$(SolutionDir)bin\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)obj\$(Platform)\$(Configuration)\</IntDir>
+    <TargetName>SopAidInfer</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>SOPAIDINFER_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>include;$(OpenCVIncludeDir);$(OnnxRuntimeIncludeDir);$(TensorRTIncludeDir);$(LibTorchIncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <AdditionalLibraryDirectories>$(OpenCVLibDir);$(OnnxRuntimeLibDir);$(TensorRTLibDir);$(LibTorchLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>opencv_world$(OpenCVVersion)d.lib;onnxruntime.lib;torch.lib;torch_cpu.lib;c10.lib;nvinfer_11.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>copy /Y &quot;$(OnnxRuntimeDll)&quot; &quot;$(OutDir)onnxruntime.dll&quot;
+copy /Y &quot;$(OnnxRuntimeLibDir)\onnxruntime_providers_shared.dll&quot; &quot;$(OutDir)onnxruntime_providers_shared.dll&quot;
+copy /Y &quot;$(OnnxRuntimeLibDir)\onnxruntime_providers_cuda.dll&quot; &quot;$(OutDir)onnxruntime_providers_cuda.dll&quot;
+copy /Y &quot;$(OpenCVRoot)\x64\vc16\bin\opencv_world$(OpenCVVersion).dll&quot; &quot;$(OutDir)opencv_world$(OpenCVVersion).dll&quot;
+xcopy /Y /I &quot;E:\libtorch\lib\*.dll&quot; &quot;$(OutDir)&quot;
+copy /Y &quot;E:\TensorRT-11.1.0.106\bin\nvinfer_11.dll&quot; &quot;$(OutDir)nvinfer_11.dll&quot;
+copy /Y &quot;$(SolutionDir)..\.venv\Lib\site-packages\torch\lib\cudart64_12.dll&quot; &quot;$(OutDir)cudart64_12.dll&quot;</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>SOPAIDINFER_EXPORTS;NDEBUG;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>include;$(OpenCVIncludeDir);$(OnnxRuntimeIncludeDir);$(TensorRTIncludeDir);$(LibTorchIncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalLibraryDirectories>$(OpenCVLibDir);$(OnnxRuntimeLibDir);$(TensorRTLibDir);$(LibTorchLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>opencv_world$(OpenCVVersion).lib;onnxruntime.lib;torch.lib;torch_cpu.lib;c10.lib;nvinfer_11.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>copy /Y &quot;$(OnnxRuntimeDll)&quot; &quot;$(OutDir)onnxruntime.dll&quot;
+copy /Y &quot;$(OnnxRuntimeLibDir)\onnxruntime_providers_shared.dll&quot; &quot;$(OutDir)onnxruntime_providers_shared.dll&quot;
+copy /Y &quot;$(OnnxRuntimeLibDir)\onnxruntime_providers_cuda.dll&quot; &quot;$(OutDir)onnxruntime_providers_cuda.dll&quot;
+copy /Y &quot;$(OpenCVRoot)\x64\vc16\bin\opencv_world$(OpenCVVersion).dll&quot; &quot;$(OutDir)opencv_world$(OpenCVVersion).dll&quot;
+xcopy /Y /I &quot;E:\libtorch\lib\*.dll&quot; &quot;$(OutDir)&quot;
+copy /Y &quot;E:\TensorRT-11.1.0.106\bin\nvinfer_11.dll&quot; &quot;$(OutDir)nvinfer_11.dll&quot;
+copy /Y &quot;$(SolutionDir)..\.venv\Lib\site-packages\torch\lib\cudart64_12.dll&quot; &quot;$(OutDir)cudart64_12.dll&quot;
+xcopy /Y /I &quot;$(SolutionDir)..\.venv\Lib\site-packages\torch\lib\cu*.dll&quot; &quot;$(OutDir)&quot;
+xcopy /Y /I &quot;$(SolutionDir)..\.venv\Lib\site-packages\torch\lib\nv*.dll&quot; &quot;$(OutDir)&quot;
+copy /Y &quot;$(SolutionDir)..\.venv\Lib\site-packages\torch\lib\zlibwapi.dll&quot; &quot;$(OutDir)zlibwapi.dll&quot;</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="include\SopAidInfer.h" />
+    <ClInclude Include="src\IYoloBackend.h" />
+    <ClInclude Include="src\YoloPostprocess.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\SopAidInfer.cpp" />
+    <ClCompile Include="src\OnnxYoloBackend.cpp" />
+    <ClCompile Include="src\TensorRtYoloBackend.cpp" />
+    <ClCompile Include="src\TorchScriptYoloBackend.cpp" />
+    <ClCompile Include="src\YoloPostprocess.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets" />
+</Project>
