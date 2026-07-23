@@ -27,6 +27,9 @@ SOPAID/
 ├── SOP_PYD.py              # TCP/命令行封装入口，最终 exe 打包入口
 ├── SOP_PYD.spec            # PyInstaller 打包配置
 ├── config/app_config.json  # 模型、ROI、阈值、输出目录等默认配置
+├── SOPAIDC++/              # 原生 C++ 推理 DLL 与测试程序
+├── SOPAID_wrapper/         # 面向 .NET 的 C++/CLI 封装
+├── SOPAID_wrapper_test/    # C# 封装调用示例
 ├── DEEPAIY/                # 外部参考封装样例，不参与本项目运行
 ├── deploy/                 # ONNX/TensorRT 格式转换脚本
 ├── docs/                   # 部署说明
@@ -36,6 +39,24 @@ SOPAID/
 ├── tools/                  # 训练、抽帧、数据集整理、ROI 标定工具
 └── videos/                 # 测试视频
 ```
+
+## C++ 与 .NET 封装
+
+仓库同时提供原生 C++ 推理接口及其 .NET 调用链：
+
+```text
+SOPAIDC++/              # SOPAID.dll、SOPAIDExe 及三种模型后端源码
+SOPAID_wrapper/         # 将原生 DLL 封装为 .NET 可调用接口
+SOPAID_wrapper_test/    # C# 控制台测试项目
+```
+
+使用 Visual Studio 打开 `SOPAIDC++/SOPAID.sln` 编译原生 DLL。首次构建前，将
+`SOPAIDC++/SopAidInfer.user.props.template` 复制为 `SopAidInfer.user.props`，并按本机环境配置
+OpenCV、ONNX Runtime、TensorRT 和 LibTorch 路径。详细接口、运行参数及后端说明见
+[`SOPAIDC++/README.md`](SOPAIDC++/README.md)。
+
+`SOPAID_wrapper` 和 `SOPAID_wrapper_test` 分别为 C++/CLI 封装与 C# 调用示例；编译时需保证
+平台目标一致（推荐 `x64`），并让测试程序能够找到 `SOPAID.dll`、`SOPAID_wrapper.dll` 及对应运行库。
 
 ## 运行时代码
 
