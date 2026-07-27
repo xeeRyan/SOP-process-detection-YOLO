@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "project_id": "SK_DEMO",
+  "name": "SK 轴承盖板装配示例",
+  "description": "由原有固定 SOP 配置迁移的兼容项目",
+  "status": "active",
+  "classes": [
+    {"id": 0, "name": "bearing", "display_name": "轴承"},
+    {"id": 1, "name": "cover", "display_name": "盖板"},
+    {"id": 2, "name": "tool", "display_name": "工具"}
+  ],
+  "active_model": "../../models/best_yolo26s.pt",
+  "active_workflow": "workflow.json",
+  "active_roi_profile": "rois.json"
+}

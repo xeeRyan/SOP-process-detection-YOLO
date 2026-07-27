@@ -1,0 +1,21 @@
+{
+  "command": "train_project",
+  "params": {
+    "sop_project_dir": "projects/SK_DEMO",
+    "dataset_name": "dataset_v1",
+    "model_id": "sk_detector",
+    "model_version": "1.0.0",
+    "base_model_path": "models/yolo26n.pt",
+    "epochs": 100,
+    "batch": 8,
+    "imgsz": 640,
+    "workers": 0,
+    "device": null,
+    "optimizer": "auto",
+    "amp": true,
+    "export_torchscript": true,
+    "export_onnx": true,
+    "export_engine": false,
+    "set_active": true
+  }
+}

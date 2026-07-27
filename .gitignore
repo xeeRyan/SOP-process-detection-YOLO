@@ -36,6 +36,17 @@ models/**
 outputs/**
 runs/**
 
+# Per-project generated media and training artifacts (keep project JSON configs tracked)
+projects/*/source_videos/**
+projects/*/frames/**
+projects/*/annotations/**
+projects/*/dataset/**
+projects/*/models/**
+projects/*/runs/**
+projects/*/outputs/**
+projects/*/frames_manifest.json
+projects/*/annotation_import_report.json
+
 # OS and editor temporary files
 .DS_Store
 Thumbs.db

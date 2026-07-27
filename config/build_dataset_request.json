@@ -1,0 +1,13 @@
+{
+  "command": "build_dataset",
+  "params": {
+    "sop_project_dir": "projects/SK_DEMO",
+    "dataset_name": "dataset_v1",
+    "train_ratio": 0.7,
+    "val_ratio": 0.2,
+    "test_ratio": 0.1,
+    "seed": 42,
+    "require_all_annotated": true,
+    "require_all_splits": true
+  }
+}

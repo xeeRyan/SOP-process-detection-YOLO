@@ -23,12 +23,16 @@ class StepResult:
     该对象会出现在 result.json 的 steps 字段中，供软件端展示每一步状态。
     """
 
-    step_id: int
+    step_id: int | str
     name: str
     key: str
     trigger_classes: list[str]
     roi_name: str
     allow_hand_pose: bool = False
+    trigger_type: str = "object_in_roi"
+    minimum_confidence: float = 0.0
+    stable_frames: int | None = None
+    timeout_sec: float | None = None
     status: str = "pending"
     frame: int | None = None
     time: float | None = None
@@ -44,6 +48,8 @@ class StepResult:
             "trigger_classes": self.trigger_classes,
             "roi": self.roi_name,
             "allow_hand_pose": self.allow_hand_pose,
+            "trigger_type": self.trigger_type,
+            "minimum_confidence": self.minimum_confidence,
             "status": self.status,
             "frame": self.frame,
             "time": self.time,
@@ -71,16 +77,19 @@ class SOPStateMachine:
         step_enabled: dict[str, bool] | None = None,
         trigger_sources: dict[str, str] | None = None,
         step_timeouts_sec: dict[str, float] | None = None,
+        workflow: dict[str, Any] | None = None,
+        rois: dict[str, Sequence[int]] | None = None,
     ) -> None:
-        self.rois = {
+        self.rois = dict(rois) if rois is not None else {
             "work": work_roi,
             "screw_bin": screw_bin_roi,
             "tool_home": tool_home_roi,
         }
         enabled_steps = step_enabled or {}
+        step_definitions = self._build_step_definitions(workflow) if workflow is not None else STEP_DEFINITIONS
         self.steps = [
             StepResult(**step)
-            for step in STEP_DEFINITIONS
+            for step in step_definitions
             if enabled_steps.get(step["key"], True)
         ]
         self.current_index = 0
@@ -135,7 +144,7 @@ class SOPStateMachine:
 
         if self._step_started_at is None:
             self._step_started_at = time_sec
-        timeout_sec = self.step_timeouts_sec.get(step.key)
+        timeout_sec = self.step_timeouts_sec.get(step.key, step.timeout_sec)
         if timeout_sec is not None and timeout_sec <= 0:
             raise ValueError(f"步骤 {step.key} 的超时时间必须大于 0")
         if timeout_sec is not None and time_sec - self._step_started_at > timeout_sec:
@@ -143,8 +152,14 @@ class SOPStateMachine:
             self._mark_remaining_failed()
             return
 
-        roi = self.rois[step.roi_name]
-        in_roi = labels_in_roi(detections, roi)
+        roi = self.rois.get(step.roi_name)
+        eligible_detections = [item for item in detections if item.conf >= step.minimum_confidence]
+        if step.trigger_type == "object_present":
+            in_roi = {item.class_name for item in eligible_detections}
+        else:
+            if roi is None:
+                raise ValueError(f"步骤 {step.key} 引用了不存在的 ROI: {step.roi_name}")
+            in_roi = labels_in_roi(eligible_detections, roi)
         expected = set(step.trigger_classes)
         trigger_source_mode = self.trigger_sources.get(step.key, "auto")
         if trigger_source_mode not in {"auto", "yolo", "hand_pose"}:
@@ -152,8 +167,9 @@ class SOPStateMachine:
         yolo_sources = sorted(expected & in_roi) if trigger_source_mode in {"auto", "yolo"} else []
         yolo_hit = bool(yolo_sources)
         hand_hit = (
-            step.allow_hand_pose
+            (step.allow_hand_pose or step.trigger_type == "hand_in_roi")
             and trigger_source_mode in {"auto", "hand_pose"}
+            and roi is not None
             and self._hand_pose_in_roi(hands or [], roi)
         )
         trigger_source = self._resolve_trigger_source(yolo_sources, hand_hit)
@@ -165,7 +181,8 @@ class SOPStateMachine:
             if item.roi_name == "work"
             for trigger_class in item.trigger_classes
         }
-        wrong_classes = sorted(labels_in_roi(detections, self.rois["work"]) & later_work_classes)
+        work_roi = self.rois.get("work")
+        wrong_classes = sorted(labels_in_roi(detections, work_roi) & later_work_classes) if work_roi else []
         if step.roi_name == "work" and wrong_classes and not yolo_hit:
             self.reason = f"顺序错误: 当前等待 {step.key}, 但检测到 {wrong_classes[0]} 先进入装配区"
             self._mark_remaining_failed()
@@ -179,7 +196,9 @@ class SOPStateMachine:
         # 连续稳定帧计数，避免单帧误检导致步骤误触发。
         self._stable_counter += 1
         self._stable_trigger_source = trigger_source
-        required_frames = self.tool_hold_frames if step.key == "tool_return" else self.step_stable_frames
+        required_frames = step.stable_frames or (
+            self.tool_hold_frames if step.key == "tool_return" else self.step_stable_frames
+        )
         if self._stable_counter < required_frames:
             return
 
@@ -231,3 +250,28 @@ class SOPStateMachine:
         if hand_hit:
             return "hand_pose"
         return None
+
+    @staticmethod
+    def _build_step_definitions(workflow: dict[str, Any]) -> list[dict[str, Any]]:
+        """将项目 workflow.json 转成状态机内部步骤结构。"""
+
+        definitions: list[dict[str, Any]] = []
+        for step in sorted(workflow.get("steps", []), key=lambda item: item["order"]):
+            trigger = step["trigger"]
+            trigger_type = trigger["type"]
+            class_name = trigger.get("class_name")
+            definitions.append(
+                {
+                    "step_id": step["order"],
+                    "key": str(step["id"]),
+                    "name": str(step["name"]),
+                    "trigger_classes": [str(class_name)] if class_name else [],
+                    "roi_name": str(trigger.get("roi_id", "")),
+                    "allow_hand_pose": bool(trigger.get("allow_hand_pose", trigger_type == "hand_in_roi")),
+                    "trigger_type": trigger_type,
+                    "minimum_confidence": float(trigger.get("confidence", 0.0)),
+                    "stable_frames": int(trigger.get("stable_frames", 3)),
+                    "timeout_sec": float(step["timeout_sec"]) if step.get("timeout_sec") is not None else None,
+                }
+            )
+        return definitions

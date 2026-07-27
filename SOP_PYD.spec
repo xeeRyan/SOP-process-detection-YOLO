@@ -22,6 +22,7 @@ project_datas += add_dir('datasets', 'datasets')
 project_datas += add_dir('videos', 'videos')
 project_datas += add_dir('docs', 'docs')
 project_datas += add_dir('deploy', 'deploy')
+project_datas += add_dir('projects/SK_DEMO', 'projects/SK_DEMO')
 
 # Collect package resources used by runtime imports and model export.
 package_datas = []

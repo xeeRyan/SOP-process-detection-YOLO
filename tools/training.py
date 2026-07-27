@@ -20,7 +20,7 @@ DEFAULT_TRAIN_PROJECT = ROOT / "runs"
 DEFAULT_TRAIN_NAME = "sop_yolo26s"
 DEFAULT_BEST_MODEL_PATH = ROOT / "models" / "best_yolo26s.pt"
 
-# 绗竴鐗堝紑鏀剧粰杞欢绔殑 YOLO 璁粌澧炲己鍙傛暟銆?
+# 第一版开放给软件端的 YOLO 训练增强参数。
 AUGMENTATION_PARAM_NAMES = (
     "hsv_h",
     "hsv_s",
@@ -77,11 +77,10 @@ def train_yolo_model(
     export_python_path: str | Path | None = None,
     **augmentation_params: Any,
 ) -> dict:
-    """璁粌 YOLO26s SOP 妫€娴嬫ā鍨嬨€?
+    """训练 YOLO SOP 目标检测模型。
 
-    闈㈠悜杞欢绔殑绗竴鐗堝彲璋冨弬鏁板寘鎷細epochs銆乥atch銆乮mgsz銆亀orkers銆乨evice銆乵odel銆乷ptimizer銆乤mp銆?
-    val_ratio 浠ュ強甯哥敤鏁版嵁澧炲己鍙傛暟銆倂al_ratio 鍙湁鍦ㄥ悓鏃朵紶鍏?images_dir/labels_dir 鏃讹紝
-    鎵嶄細瑙﹀彂鏁版嵁闆嗛噸鏂板垝鍒嗐€?
+    软件端可配置训练轮数、批大小、输入尺寸、设备、优化器、混合精度和常用增强参数。
+    只有同时传入 images_dir 和 labels_dir 时，val_ratio 才会触发数据集重新划分。
     """
 
     base_model_path = Path(base_model_path)
@@ -385,6 +384,8 @@ def _export_requested_models(
             logger.exception("torchscript_export_failed | %s", exc)
             if export_strict:
                 raise
+    if not export_onnx_enabled and not export_engine_enabled:
+        return result
     engine_path = Path(engine_output_path) if engine_output_path is not None else source_model_path.with_suffix(".engine")
 
     try:

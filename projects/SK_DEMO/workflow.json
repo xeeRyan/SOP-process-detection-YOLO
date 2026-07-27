@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "workflow_id": "SK_DEMO_V1",
+  "name": "SK 轴承盖板装配流程",
+  "version": "1.0.0",
+  "steps": [
+    {"id": "bearing", "order": 1, "name": "放入方形轴承", "required": true, "trigger": {"type": "object_in_roi", "class_name": "bearing", "roi_id": "work", "confidence": 0.0, "stable_frames": 3}},
+    {"id": "cover", "order": 2, "name": "盖上圆形盖", "required": true, "trigger": {"type": "object_in_roi", "class_name": "cover", "roi_id": "work", "confidence": 0.0, "stable_frames": 3}},
+    {"id": "screw_action", "order": 3, "name": "手部骨骼或工具进入螺丝盘", "required": true, "trigger": {"type": "object_in_roi", "class_name": "tool", "roi_id": "screw_bin", "allow_hand_pose": true, "confidence": 0.0, "stable_frames": 3}},
+    {"id": "tool_return", "order": 4, "name": "工具放回原位", "required": true, "trigger": {"type": "object_in_roi", "class_name": "tool", "roi_id": "tool_home", "confidence": 0.0, "stable_frames": 10}}
+  ]
+}

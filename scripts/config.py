@@ -2,6 +2,7 @@ from pathlib import Path
 
 # 项目根目录，所有默认路径都基于这里拼接。
 ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_SOP_PROJECT_DIR = ROOT / "projects" / "SK_DEMO"
 
 # 项目默认输入、模型和输出位置。
 DEFAULT_VIDEO_PATH = ROOT / "videos" / "sk.mp4"

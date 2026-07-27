@@ -112,7 +112,13 @@ def Start_tcp(cmd: str = "open_tcp", host: str | None = None, port: int | None =
     config_host, config_port = get_tcp_config()
     ip_port = (host or config_host, int(port or config_port))
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    # Windows 的 SO_REUSEADDR 会允许多个 SOP_PYD 实例同时监听同一端口，
+    # 请求随后会被不同旧进程分流，并争用相同的输出文件。Windows 使用独占
+    # 地址；其他平台保留快速重启所需的 REUSEADDR。
+    if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+    else:
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server.settimeout(1.0)
     server.bind(ip_port)
     server.listen(1)

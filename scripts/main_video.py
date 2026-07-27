@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Sequence
+from uuid import uuid4
 
 import cv2
 
@@ -26,6 +27,7 @@ from scripts.config import (
     WORK_ROI,
 )
 from scripts.detector import build_detector
+from scripts.project import load_sop_project
 from scripts.sop_logic import SOPStateMachine
 from scripts.utils import ensure_dir, write_json
 from scripts.visualizer import draw_detections, draw_hand_landmarks, draw_roi, draw_sop_status
@@ -35,7 +37,7 @@ from scripts.runtime_logging import close_operation_logger, create_operation_log
 # 主流程入口：视频输入 -> YOLO 检测 -> 手部骨骼 -> SOP 判定 -> 视频/JSON 输出。
 def process_video(
     video_path: str | Path = DEFAULT_VIDEO_PATH,
-    model_path: str | Path = DEFAULT_MODEL_PATH,
+    model_path: str | Path | None = None,
     output_dir: str | Path = DEFAULT_OUTPUT_DIR,
     roi: Sequence[int] = WORK_ROI,
     screw_bin_roi: Sequence[int] = SCREW_BIN_ROI,
@@ -46,6 +48,7 @@ def process_video(
     enable_yolo: bool = DEFAULT_ENABLE_YOLO,
     confidence_threshold: float = CONFIDENCE_THRESHOLD,
     nms_threshold: float = DEFAULT_NMS_THRESHOLD,
+    inference_device: str | int | None = None,
     target_classes: Sequence[str] | None = None,
     sop_step_enabled: dict[str, bool] | None = None,
     sop_trigger_sources: dict[str, str] | None = None,
@@ -53,6 +56,7 @@ def process_video(
     output_video: bool = DEFAULT_OUTPUT_VIDEO,
     output_json: bool = DEFAULT_OUTPUT_JSON,
     realtime_display: bool = DEFAULT_REALTIME_DISPLAY,
+    sop_project_dir: str | Path | None = None,
 ) -> dict:
     """视频级 SOP 检测入口。
 
@@ -63,13 +67,24 @@ def process_video(
     """
 
     video_path = Path(video_path)
-    model_path = Path(model_path)
     output_dir = ensure_dir(Path(output_dir))
-    active_classes = list(target_classes) if target_classes is not None else list(TARGET_CLASSES)
+    sop_project = load_sop_project(sop_project_dir) if sop_project_dir is not None else None
+    if model_path in (None, "") and sop_project is not None:
+        active_model = sop_project.project.get("active_model")
+        if active_model:
+            candidate = Path(active_model)
+            model_path = candidate if candidate.is_absolute() else sop_project.root / candidate
+    model_path = Path(model_path or DEFAULT_MODEL_PATH).resolve()
+    active_classes = (
+        list(target_classes)
+        if target_classes is not None
+        else sop_project.class_names if sop_project is not None else list(TARGET_CLASSES)
+    )
     pipeline_config = _build_pipeline_config(
         enable_yolo=enable_yolo,
         confidence_threshold=confidence_threshold,
         nms_threshold=nms_threshold,
+        inference_device=inference_device,
         target_classes=active_classes,
         sop_step_enabled=sop_step_enabled,
         sop_trigger_sources=sop_trigger_sources,
@@ -105,6 +120,20 @@ def process_video(
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     log_event(logger, "video_opened", fps=fps, width=width, height=height)
 
+    project_rois = sop_project.resolve_rois(width, height) if sop_project is not None else None
+    if project_rois is not None:
+        roi = project_rois.get("work", roi)
+        screw_bin_roi = project_rois.get("screw_bin", screw_bin_roi)
+        tool_home_roi = project_rois.get("tool_home", tool_home_roi)
+        log_event(
+            logger,
+            "project_configuration_resolved",
+            project_id=sop_project.project_id,
+            workflow_id=sop_project.workflow["workflow_id"],
+            model_path=model_path,
+            rois=project_rois,
+        )
+
     # 初始化目标检测器和可选的手部骨骼检测器。
     detector = None
     if enable_yolo:
@@ -114,7 +143,9 @@ def process_video(
                 conf_threshold=confidence_threshold,
                 target_classes=active_classes,
                 nms_threshold=nms_threshold,
+                device=inference_device,
             )
+            pipeline_config["ai"]["inference_device"] = detector.device
         except Exception as exc:
             logger.exception("detect_failed | detector_init_failed | %s", exc)
             cap.release()
@@ -152,13 +183,15 @@ def process_video(
         step_enabled=sop_step_enabled,
         trigger_sources=sop_trigger_sources,
         step_timeouts_sec=sop_step_timeouts_sec,
+        workflow=sop_project.workflow if sop_project is not None else None,
+        rois=project_rois,
     )
 
     result_video_path = output_dir / RESULT_VIDEO_NAME
     result_json_path = output_dir / RESULT_JSON_NAME
-    temporary_video_path = result_video_path.with_name(f"{result_video_path.stem}.inprogress{result_video_path.suffix}")
-    if temporary_video_path.exists():
-        temporary_video_path.unlink()
+    # 每个检测任务使用独立临时文件。固定的 result.inprogress.mp4 在重复点击、
+    # 多服务进程或上次任务尚未释放 VideoWriter 时会产生 WinError 32。
+    temporary_video_path = _build_temporary_video_path(result_video_path)
     video_written = False
 
     # 输出视频在读取首帧预处理结果后创建，确保裁剪/Resize 后尺寸正确。
@@ -174,6 +207,7 @@ def process_video(
     }
 
     frame_id = 0
+    processing_failed = False
     try:
         while True:
             ok, frame = cap.read()
@@ -227,9 +261,8 @@ def process_video(
             # 所有可视化信息直接叠加到输出视频帧。
             draw_detections(frame, detections)
             draw_hand_landmarks(frame, hands)
-            draw_roi(frame, roi, "WORK ROI")
-            draw_roi(frame, screw_bin_roi, "SCREW BIN")
-            draw_roi(frame, tool_home_roi, "TOOL HOME")
+            for roi_id, roi_value in machine.rois.items():
+                draw_roi(frame, roi_value, roi_id.upper().replace("_", " "))
             draw_sop_status(frame, machine)
             if writer is not None:
                 writer.write(frame)
@@ -241,10 +274,8 @@ def process_video(
 
             frame_id += 1
     except Exception as exc:
+        processing_failed = True
         logger.exception("detect_failed | %s", exc)
-        if temporary_video_path.exists():
-            temporary_video_path.unlink()
-        close_operation_logger(logger)
         raise
     finally:
         cap.release()
@@ -254,14 +285,32 @@ def process_video(
             hand_pose_detector.close()
         if realtime_display:
             cv2.destroyAllWindows()
+        if processing_failed:
+            # Windows 必须在 writer.release() 之后才能删除视频文件。
+            try:
+                temporary_video_path.unlink(missing_ok=True)
+            except OSError as cleanup_error:
+                log_event(logger, "temporary_video_cleanup_failed", path=temporary_video_path, error=str(cleanup_error))
+            close_operation_logger(logger)
 
     if output_video and temporary_video_path.exists():
-        if result_video_path.exists():
-            result_video_path.unlink()
+        # Path.replace 使用原子替换，无需先删除目标文件，缩短并发竞争窗口。
         temporary_video_path.replace(result_video_path)
         video_written = True
 
     result = machine.finalize(video_path.name)
+    result["sop_project"] = (
+        {
+            "project_id": sop_project.project_id,
+            "project_dir": str(sop_project.root),
+            "workflow_id": sop_project.workflow["workflow_id"],
+            "workflow_version": sop_project.workflow.get("version"),
+            "model_path": str(model_path),
+            "model_manifest": sop_project.project.get("active_model_manifest"),
+        }
+        if sop_project is not None
+        else None
+    )
     result["hand_pose"] = hand_pose_summary
     result["pipeline"] = pipeline_config
     result["output_video"] = str(result_video_path) if video_written else None
@@ -283,10 +332,20 @@ def process_video(
     return result
 
 
+def _build_temporary_video_path(result_video_path: Path) -> Path:
+    """生成任务级唯一临时视频路径，避免检测任务之间互相抢占文件。"""
+
+    task_id = uuid4().hex
+    return result_video_path.with_name(
+        f"{result_video_path.stem}.{task_id}.inprogress{result_video_path.suffix}"
+    )
+
+
 def _build_pipeline_config(
     enable_yolo: bool,
     confidence_threshold: float,
     nms_threshold: float,
+    inference_device: str | int | None,
     target_classes: list[str],
     sop_step_enabled: dict[str, bool] | None,
     sop_trigger_sources: dict[str, str] | None,
@@ -302,6 +361,7 @@ def _build_pipeline_config(
             "enable_yolo": enable_yolo,
             "confidence_threshold": confidence_threshold,
             "nms_threshold": nms_threshold,
+            "inference_device": inference_device,
             "target_classes": target_classes,
         },
         "sop": {

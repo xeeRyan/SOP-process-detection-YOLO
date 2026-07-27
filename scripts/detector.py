@@ -38,6 +38,7 @@ class YOLODetector:
         conf_threshold: float = CONFIDENCE_THRESHOLD,
         target_classes: Iterable[str] = TARGET_CLASSES,
         nms_threshold: float = DEFAULT_NMS_THRESHOLD,
+        device: str | int | None = None,
     ) -> None:
         model_path = Path(model_path)
         if not model_path.exists():
@@ -56,11 +57,19 @@ class YOLODetector:
         self.conf_threshold = conf_threshold
         self.target_classes = set(target_classes)
         self.nms_threshold = nms_threshold
+        self.device = _resolve_inference_device(model_path, device)
 
     def detect(self, frame: np.ndarray) -> list[Detection]:
         """检测单帧 OpenCV BGR 图像。"""
 
-        results = self.model.predict(frame, conf=self.conf_threshold, iou=self.nms_threshold, verbose=False)
+        predict_options = {
+            "conf": self.conf_threshold,
+            "iou": self.nms_threshold,
+            "verbose": False,
+        }
+        if self.device is not None:
+            predict_options["device"] = self.device
+        results = self.model.predict(frame, **predict_options)
         if not results:
             return []
 
@@ -89,6 +98,7 @@ def build_detector(
     conf_threshold: float = CONFIDENCE_THRESHOLD,
     target_classes: Iterable[str] = TARGET_CLASSES,
     nms_threshold: float = DEFAULT_NMS_THRESHOLD,
+    device: str | int | None = None,
 ) -> YOLODetector:
     """创建目标检测器，供主流程和 API 复用。"""
 
@@ -97,4 +107,15 @@ def build_detector(
         conf_threshold=conf_threshold,
         target_classes=target_classes,
         nms_threshold=nms_threshold,
+        device=device,
     )
+
+
+def _resolve_inference_device(model_path: Path, requested: str | int | None) -> str | int | None:
+    """自动模式下让 ONNX 使用 CPU，避免 CUDA Tensor 绑定到 CPU 会话。"""
+
+    if requested not in (None, "", "auto"):
+        return requested
+    if model_path.suffix.lower() == ".onnx":
+        return "cpu"
+    return None
