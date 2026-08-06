@@ -1,3 +1,5 @@
+"""在视频帧上绘制检测框、ROI、步骤与手部关键点。"""
+
 from __future__ import annotations
 
 from typing import Any, Sequence
@@ -5,8 +7,9 @@ from typing import Any, Sequence
 import cv2
 import numpy as np
 
-from scripts.config import BOX_COLOR, NG_COLOR, OK_COLOR, ROI_COLOR, SCREW_BIN_COLOR, TEXT_COLOR, TOOL_HOME_COLOR
-from scripts.detector import Detection
+from scripts.config import BOX_COLOR, NG_COLOR, OK_COLOR, ROI_COLOR, TEXT_COLOR
+from scripts.legacy_sk_config import SCREW_BIN_COLOR, TOOL_HOME_COLOR
+from scripts.inference import Detection
 from scripts.sop_logic import SOPStateMachine
 
 

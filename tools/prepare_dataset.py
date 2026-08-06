@@ -1,3 +1,5 @@
+"""将图片和YOLO标签整理为训练/验证数据集。"""
+
 from __future__ import annotations
 
 import argparse

@@ -1,6 +1,10 @@
-﻿from __future__ import annotations
+"""JSON任务的中央调度器。
 
-import json
+负责命令选择、默认配置和路径解析，具体业务委托给tools和scripts模块。
+"""
+
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 from typing import Any
@@ -9,39 +13,18 @@ from scripts.config import (
     CONFIDENCE_THRESHOLD,
     DEFAULT_ENABLE_YOLO,
     DEFAULT_HAND_POSE_MODEL_PATH,
-    DEFAULT_MODEL_PATH,
     DEFAULT_NMS_THRESHOLD,
-    DEFAULT_OUTPUT_DIR,
     DEFAULT_OUTPUT_JSON,
     DEFAULT_OUTPUT_VIDEO,
     DEFAULT_REALTIME_DISPLAY,
-    DEFAULT_SOP_PROJECT_DIR,
     DEFAULT_TCP_HOST,
     DEFAULT_TCP_PORT,
-    DEFAULT_VIDEO_PATH,
     ENABLE_HAND_POSE,
     HAND_POSE_SAMPLE_INTERVAL,
     ROOT,
-    SCREW_BIN_ROI,
-    TOOL_HOME_ROI,
-    WORK_ROI,
 )
-from scripts.main_video import process_video
-from scripts.project.storage import resolve_within
-from tools.annotation_import import import_yolo_annotations
-from tools.dataset_builder import build_yolo_dataset
-from tools.project_frames import extract_project_videos
-from tools.project_management import (
-    activate_sop_project,
-    create_sop_project,
-    get_sop_project,
-    list_sop_projects,
-    save_project_rois,
-    save_project_workflow,
-    update_project_metadata,
-)
-from tools.project_training import train_project_model
-from tools.training import train_yolo_model
+from scripts.legacy_sk_config import DEFAULT_MODEL_PATH, DEFAULT_SOP_PROJECT_DIR, DEFAULT_VIDEO_PATH
+from scripts.project.storage import read_json_object, resolve_within
 
 
 APP_ROOT = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else ROOT
@@ -60,6 +43,7 @@ SUPPORTED_COMMANDS = [
     "import_annotations",
     "build_dataset",
     "train_project",
+    "convert_project_model",
     "detect",
     "train",
 ]
@@ -68,15 +52,7 @@ SUPPORTED_COMMANDS = [
 def read_json(path: str | Path) -> dict[str, Any]:
     """读取 UTF-8 JSON 配置文件。"""
 
-    with open(path, "r", encoding="utf-8-sig") as fp:
-        return json.load(fp)
-
-
-def save_json(json_data: dict[str, Any], path: str | Path) -> None:
-    """保存 UTF-8 JSON 文件。"""
-
-    with open(path, "w", encoding="utf-8") as fp:
-        json.dump(json_data, fp, ensure_ascii=False, indent=2)
+    return read_json_object(path)
 
 
 def load_default_config() -> dict[str, Any]:
@@ -117,6 +93,12 @@ def run_task(dict_data: dict[str, Any]) -> dict[str, Any]:
         return {
             "service": "SOP_PYD",
             "status": "ok",
+            "api_version": "1.2",
+            "capabilities": [
+                "project_model_conversion",
+                "training_progress_file",
+                "training_stop_after_epoch",
+            ],
             "commands": SUPPORTED_COMMANDS,
         }
     handler = _command_handlers().get(str(command))
@@ -138,20 +120,27 @@ def _command_handlers():
         "import_annotations": run_import_annotations,
         "build_dataset": run_build_dataset,
         "train_project": run_train_project,
+        "convert_project_model": run_convert_project_model,
         "detect": run_detect,
         "train": run_train,
     }
 
 
 def run_list_projects(_dict_data: dict[str, Any]) -> dict[str, Any]:
+    from tools.project_management import list_sop_projects
+
     return list_sop_projects(PROJECTS_ROOT)
 
 
 def run_get_project(dict_data: dict[str, Any]) -> dict[str, Any]:
+    from tools.project_management import get_sop_project
+
     return get_sop_project(_required_project_dir(dict_data))
 
 
 def run_activate_project(dict_data: dict[str, Any]) -> dict[str, Any]:
+    from tools.project_management import activate_sop_project
+
     return activate_sop_project(_required_project_dir(dict_data))
 
 
@@ -164,6 +153,8 @@ def _required_project_dir(dict_data: dict[str, Any]) -> Path:
 
 
 def run_create_project(dict_data: dict[str, Any]) -> dict[str, Any]:
+    from tools.project_management import create_sop_project
+
     params = dict_data.get("params", dict_data)
     return create_sop_project(
         projects_root=PROJECTS_ROOT,
@@ -175,6 +166,8 @@ def run_create_project(dict_data: dict[str, Any]) -> dict[str, Any]:
 
 
 def run_update_project(dict_data: dict[str, Any]) -> dict[str, Any]:
+    from tools.project_management import update_project_metadata
+
     params = dict_data.get("params", dict_data)
     return update_project_metadata(
         _required_project_dir(dict_data),
@@ -185,6 +178,8 @@ def run_update_project(dict_data: dict[str, Any]) -> dict[str, Any]:
 
 
 def run_save_rois(dict_data: dict[str, Any]) -> dict[str, Any]:
+    from tools.project_management import save_project_rois
+
     params = dict_data.get("params", dict_data)
     rois = params.get("rois")
     if not isinstance(rois, dict):
@@ -193,6 +188,8 @@ def run_save_rois(dict_data: dict[str, Any]) -> dict[str, Any]:
 
 
 def run_save_workflow(dict_data: dict[str, Any]) -> dict[str, Any]:
+    from tools.project_management import save_project_workflow
+
     params = dict_data.get("params", dict_data)
     workflow = params.get("workflow")
     if not isinstance(workflow, dict):
@@ -202,6 +199,8 @@ def run_save_workflow(dict_data: dict[str, Any]) -> dict[str, Any]:
 
 def run_extract_frames(dict_data: dict[str, Any]) -> dict[str, Any]:
     """导入 SOP 流程视频并生成待标注图片及清单。"""
+
+    from tools.project_frames import extract_project_videos
 
     params = dict_data.get("params", dict_data)
     raw_paths = params.get("video_paths")
@@ -228,6 +227,8 @@ def run_extract_frames(dict_data: dict[str, Any]) -> dict[str, Any]:
 def run_import_annotations(dict_data: dict[str, Any]) -> dict[str, Any]:
     """导入并校验外部工具生成的 YOLO 标签。"""
 
+    from tools.annotation_import import import_yolo_annotations
+
     params = dict_data.get("params", dict_data)
     labels_dir = resolve_project_path(params.get("labels_dir"))
     if labels_dir is None:
@@ -244,6 +245,8 @@ def run_import_annotations(dict_data: dict[str, Any]) -> dict[str, Any]:
 def run_build_dataset(dict_data: dict[str, Any]) -> dict[str, Any]:
     """按视频分组生成标准 YOLO 训练数据集。"""
 
+    from tools.dataset_builder import build_yolo_dataset
+
     params = dict_data.get("params", dict_data)
     project_dir = resolve_project_path(params.get("sop_project_dir")) or DEFAULT_SOP_PROJECT_DIR
     return build_yolo_dataset(
@@ -255,11 +258,16 @@ def run_build_dataset(dict_data: dict[str, Any]) -> dict[str, Any]:
         seed=int(params.get("seed", 42)),
         require_all_annotated=bool(params.get("require_all_annotated", True)),
         require_all_splits=bool(params.get("require_all_splits", True)),
+        allow_single_video_frame_split=bool(
+            params.get("allow_single_video_frame_split", False)
+        ),
     )
 
 
 def run_train_project(dict_data: dict[str, Any]) -> dict[str, Any]:
     """使用项目内指定版本数据集训练并登记模型。"""
+
+    from tools.project_training import train_project_model
 
     params = dict_data.get("params", dict_data)
     dataset_name = str(params.get("dataset_name") or "")
@@ -279,15 +287,37 @@ def run_train_project(dict_data: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def run_convert_project_model(dict_data: dict[str, Any]) -> dict[str, Any]:
+    """将已登记模型的 best.pt 转换为部署格式。"""
+
+    from tools.project_model_conversion import convert_project_model
+
+    params = dict_data.get("params", dict_data)
+    model_id = str(params.get("model_id") or "")
+    model_version = str(params.get("model_version") or "")
+    if not model_id or not model_version:
+        raise ValueError("convert_project_model 需要 model_id 和 model_version")
+    project_dir = resolve_project_path(params.get("sop_project_dir")) or DEFAULT_SOP_PROJECT_DIR
+    return convert_project_model(
+        project_dir=project_dir,
+        model_id=model_id,
+        model_version=model_version,
+        formats=params.get("formats"),
+        options=params,
+    )
+
+
 def run_detect(dict_data: dict[str, Any]) -> dict[str, Any]:
     """执行视频级 SOP 工序检测。"""
 
+    from scripts.main_video import process_video
+
     config = load_default_config()
     paths_config = config.get("paths", {})
-    roi_config = config.get("roi", {})
     ai_config = config.get("ai", {})
     output_config = config.get("output", {})
     hand_pose_config = config.get("hand_pose", {})
+    tracking_config = config.get("tracking", {})
     sop_config = config.get("sop", {})
 
     params = dict_data.get("params", dict_data)
@@ -305,9 +335,6 @@ def run_detect(dict_data: dict[str, Any]) -> dict[str, Any]:
         video_path=resolve_project_path(params.get("video_path"), paths_config.get("video_path")) or DEFAULT_VIDEO_PATH,
         model_path=model_path,
         output_dir=output_dir,
-        roi=params.get("work_roi") or roi_config.get("work") or WORK_ROI,
-        screw_bin_roi=params.get("screw_bin_roi") or roi_config.get("screw_bin") or SCREW_BIN_ROI,
-        tool_home_roi=params.get("tool_home_roi") or roi_config.get("tool_home") or TOOL_HOME_ROI,
         enable_hand_pose=params.get("enable_hand_pose", hand_pose_config.get("enabled", ENABLE_HAND_POSE)),
         hand_pose_model_path=resolve_project_path(
             params.get("hand_pose_model_path"),
@@ -320,10 +347,23 @@ def run_detect(dict_data: dict[str, Any]) -> dict[str, Any]:
                 hand_pose_config.get("sample_interval", HAND_POSE_SAMPLE_INTERVAL),
             )
         ),
+        tracking_iou_threshold=float(
+            params.get("tracking_iou_threshold", tracking_config.get("iou_threshold", 0.2))
+        ),
+        tracking_max_missing_frames=int(
+            params.get("tracking_max_missing_frames", tracking_config.get("max_missing_frames", 8))
+        ),
+        event_lost_tolerance_frames=int(
+            params.get(
+                "event_lost_tolerance_frames",
+                tracking_config.get("event_lost_tolerance_frames", 8),
+            )
+        ),
         enable_yolo=params.get("enable_yolo", ai_config.get("enable_yolo", DEFAULT_ENABLE_YOLO)),
         confidence_threshold=params.get("confidence_threshold", ai_config.get("confidence_threshold", CONFIDENCE_THRESHOLD)),
         nms_threshold=params.get("nms_threshold", ai_config.get("nms_threshold", DEFAULT_NMS_THRESHOLD)),
         inference_device=params.get("inference_device"),
+        inference_backend=params.get("inference_backend", ai_config.get("inference_backend", "python")),
         target_classes=params.get("target_classes"),
         sop_step_enabled=params.get("sop_step_enabled", sop_config.get("step_enabled")),
         sop_trigger_sources=params.get("sop_trigger_sources", sop_config.get("trigger_sources")),
@@ -344,6 +384,8 @@ def resolve_detect_output_dir(project_dir: str | Path, value: str | Path | None)
 
 def run_train(dict_data: dict[str, Any]) -> dict[str, Any]:
     """执行 YOLO 模型训练。"""
+
+    from tools.training import train_yolo_model
 
     config = load_default_config()
     train_config = config.get("train", {})
@@ -386,31 +428,6 @@ def run_train(dict_data: dict[str, Any]) -> dict[str, Any]:
         mosaic=params.get("mosaic", train_config.get("mosaic")),
         mixup=params.get("mixup", train_config.get("mixup")),
         copy_paste=params.get("copy_paste", train_config.get("copy_paste")),
-        export_torchscript=bool(
-            params.get("export_torchscript", train_config.get("export_torchscript", False))
-        ),
-        export_onnx=bool(params.get("export_onnx", train_config.get("export_onnx", False))),
-        export_engine=bool(params.get("export_engine", train_config.get("export_engine", False))),
-        torchscript_output_path=resolve_project_path(
-            params.get("torchscript_output_path"), train_config.get("torchscript_output_path")
-        ),
-        onnx_output_path=resolve_project_path(params.get("onnx_output_path"), train_config.get("onnx_output_path")),
-        engine_output_path=resolve_project_path(params.get("engine_output_path"), train_config.get("engine_output_path")),
-        export_imgsz=params.get("export_imgsz", train_config.get("export_imgsz")),
-        export_opset=int(params.get("export_opset", train_config.get("export_opset", 12))),
-        export_dynamic=bool(params.get("export_dynamic", train_config.get("export_dynamic", False))),
-        export_simplify=bool(params.get("export_simplify", train_config.get("export_simplify", True))),
-        export_overwrite=bool(params.get("export_overwrite", train_config.get("export_overwrite", True))),
-        trtexec_path=params.get("trtexec_path", train_config.get("trtexec_path", "trtexec")),
-        engine_fp16=bool(params.get("engine_fp16", train_config.get("engine_fp16", True))),
-        engine_workspace_mb=params.get("engine_workspace_mb", train_config.get("engine_workspace_mb")),
-        engine_verbose=bool(params.get("engine_verbose", train_config.get("engine_verbose", False))),
-        engine_dry_run=bool(params.get("engine_dry_run", train_config.get("engine_dry_run", False))),
-        torchscript_optimize=bool(
-            params.get("torchscript_optimize", train_config.get("torchscript_optimize", False))
-        ),
-        export_strict=bool(params.get("export_strict", train_config.get("export_strict", False))),
-        export_python_path=resolve_project_path(params.get("export_python_path"), train_config.get("export_python_path")),
     )
 
 

@@ -2,7 +2,42 @@
 
 本工程的核心交付是 `SOPAID.dll`：封装 C++ 推理接口，支持 `.pt`、`.onnx`、`.engine` 三种模型格式。`SOPAIDExe` 是测试程序，用于读取视频、逐帧调用 DLL、绘制检测框和手部骨骼，并输出测试视频。
 
-当前工程不包含 ROI 区域判断、SOP 流程状态机或 Python 交付包中的业务算法。若后续需要完整 SOP 判断，需要在 C++ 侧另行实现业务流程。
+当前工程不包含 ROI 区域判断、SOP 流程状态机或 Python 交付包中的业务算法。它是与
+Python推理接口并列的底层推理SDK，不替代Python训练和完整SOP识别链路。
+
+## 多SOP项目约定
+
+每个SOP项目拥有独立类别和模型版本。C++调用方必须：
+
+1. 从`projects/<PROJECT_ID>/project.json`按类别`id`顺序生成`class_names_csv`；
+2. 从活动模型的`model_manifest.json`选择`torchscript`、`onnx`或`engine`产物；
+3. 将`project_id`、`model_id`和`model_version`传入初始化配置，便于结果追溯；
+4. 不要把Python训练检查点`best.pt`当作LibTorch模型，C++的PT入口要求TorchScript。
+
+SDK默认采用与当前Python/Ultralytics导出链路一致的letterbox预处理，并将检测框还原到
+原始图像像素坐标。
+
+### 直接从项目目录初始化
+
+新版接口可直接接收 `projects/<PROJECT_ID>`，调用方无需重复解析项目 JSON：
+
+```cpp
+SopAidProjectDirectoryConfig config;
+config.project_dir = "D:/SOPAID/projects/SK_DEMO";
+config.preferred_model_format = SopAidModelFormat::Auto;
+
+sopaid::Inference inference;
+SopAidError error;
+const auto status = inference.InitProjectDirectory(config, &error);
+```
+
+解析规则：
+
+- 类别按 `project.json/classes[].id` 排序，ID 必须从 0 连续递增；
+- 存在 `active_model_manifest` 时，从 `artifacts` 选择部署模型；
+- 没有模型清单时，在 `active_model` 同目录查找同名 `.onnx`、`.torchscript`、`.engine`；
+- `Auto` 默认优先 ONNX，其次 TorchScript，最后 TensorRT；
+- 普通 Ultralytics `.pt` 训练检查点不会被误当作 C++ TorchScript 模型。
 
 ## 工程入口
 
@@ -64,6 +99,16 @@ struct SopAidInitConfig {
     bool use_cuda;
     int32_t device_id;
 };
+
+struct SopAidProjectInitConfig {
+    uint32_t struct_size;
+    uint32_t api_version;
+    SopAidInitConfig inference;
+    SopAidResizeMode resize_mode;
+    const char* project_id;
+    const char* model_id;
+    const char* model_version;
+};
 ```
 
 常用字段：
@@ -73,8 +118,32 @@ struct SopAidInitConfig {
 - `input_width / input_height`：模型输入尺寸，当前默认 `640 x 640`。
 - `confidence_threshold`：置信度阈值。
 - `nms_threshold`：NMS 阈值。
-- `class_names_csv`：类别名，例如 `bearing,cover,tool`。
+- `class_names_csv`：必填；按项目类别id顺序传入，例如`keyboard_front,keyboard_back,battery`。
 - `use_cuda / device_id`：后端设备参数。
+- `resize_mode`：当前必须为`Letterbox`。
+- `project_id / model_id / model_version`：可选追溯元数据，不参与模型计算。
+
+旧项目继续调用`Init(SopAidInitConfig)`；多SOP项目调用
+`InitProject(SopAidProjectInitConfig)`。旧结构体布局保持不变，新旧调用端可以逐步迁移。
+初始化后可调用`GetModelInfo`读取实际后端、输入尺寸、类别数量及项目模型标识。
+
+多项目初始化示例：
+
+```cpp
+SopAidProjectInitConfig project_config;
+project_config.inference.model_path =
+    "projects/keyboard/models/sop_detector/1.0.0/best.onnx";
+project_config.inference.model_format = SopAidModelFormat::Onnx;
+project_config.inference.class_names_csv =
+    "keyboard_front,keyboard_back,battery_compartment_open,battery,battery_cover_closed";
+project_config.project_id = "keyboard";
+project_config.model_id = "sop_detector";
+project_config.model_version = "1.0.0";
+
+sopaid::Inference inference;
+SopAidError error;
+const auto status = inference.InitProject(project_config, &error);
+```
 
 ## 检测输出结构体
 
@@ -104,9 +173,9 @@ handpose_estimation_mediapipe_2023feb.onnx
 接口：
 
 ```cpp
-SopAidHand_Init
+HandInit
 HandEvaluate(cv::Mat, std::vector<SopAidHandResult>&)
-SopAidHand_Release
+HandRelease
 ```
 
 输出结构体包含单只手的 21 个关键点：
@@ -127,7 +196,7 @@ struct SopAidHandResult {
 启动格式：
 
 ```text
-SOPAID.exe <model_path> <video_path> [output_root] [confidence_threshold] [palm_model_path] [handpose_model_path] [frame_stride]
+SOPAID.exe <model_path> <video_path> [output_root] [confidence_threshold] [nms_threshold] [palm_model_path] [handpose_model_path] [sample_interval] [class_names_csv] [project_id] [model_id] [model_version]
 ```
 
 示例：

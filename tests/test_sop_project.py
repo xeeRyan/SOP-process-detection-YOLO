@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.config import DEFAULT_SOP_PROJECT_DIR
+from scripts.legacy_sk_config import DEFAULT_SOP_PROJECT_DIR
 from scripts.detector import Detection
 from scripts.project import ProjectValidationError, load_sop_project
 from scripts.sop_logic import SOPStateMachine
@@ -42,6 +42,49 @@ class SopProjectTests(unittest.TestCase):
 
         self.assertEqual(machine.final_result, "OK")
         self.assertTrue(all(step.status == "done" for step in machine.steps))
+
+    def test_optional_step_does_not_block_later_required_step(self) -> None:
+        workflow = {
+            "steps": [
+                {
+                    "id": "optional_tool",
+                    "order": 1,
+                    "name": "可选工具检查",
+                    "required": False,
+                    "trigger": {
+                        "type": "object_in_roi",
+                        "class_name": "tool",
+                        "roi_id": "work",
+                        "stable_frames": 1,
+                    },
+                },
+                {
+                    "id": "bearing",
+                    "order": 2,
+                    "name": "放入轴承",
+                    "required": True,
+                    "trigger": {
+                        "type": "object_in_roi",
+                        "class_name": "bearing",
+                        "roi_id": "work",
+                        "stable_frames": 1,
+                    },
+                },
+            ]
+        }
+        machine = SOPStateMachine(workflow=workflow, rois={"work": [0, 0, 100, 100]})
+
+        machine.update(
+            [Detection(class_name="bearing", conf=0.9, bbox=[10, 10, 30, 30])],
+            frame_id=1,
+            time_sec=0.1,
+        )
+        result = machine.finalize("optional.mp4")
+
+        self.assertEqual(result["final_result"], "OK")
+        self.assertEqual(result["steps"][0]["status"], "skipped")
+        self.assertEqual(result["steps"][1]["status"], "done")
+        self.assertFalse(result["steps"][0]["required"])
 
     def test_invalid_class_reference_has_field(self) -> None:
         source = Path(DEFAULT_SOP_PROJECT_DIR)

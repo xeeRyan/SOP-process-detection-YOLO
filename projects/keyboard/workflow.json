@@ -1,0 +1,136 @@
+{
+  "schema_version": "1.0",
+  "workflow_id": "KEYBOARD_BATTERY_V1",
+  "name": "键盘电池拆装流程",
+  "version": "1.0.0",
+  "steps": [
+    {
+      "id": "flip_to_back",
+      "order": 1,
+      "name": "键盘翻至背面",
+      "required": true,
+      "trigger": {
+        "type": "object_in_roi",
+        "confidence": 0.4,
+        "stable_frames": 3,
+        "class_name": "keyboard_back",
+        "roi_id": "keyboard_area"
+      }
+    },
+    {
+      "id": "open_battery_cover",
+      "order": 2,
+      "name": "打开电池盖",
+      "required": true,
+      "trigger": {
+        "type": "object_in_roi",
+        "confidence": 0.4,
+        "stable_frames": 3,
+        "class_name": "battery_compartment_open",
+        "roi_id": "battery_compartment"
+      }
+    },
+    {
+      "id": "remove_first_battery",
+      "order": 3,
+      "name": "拆下第一节电池",
+      "required": true,
+      "trigger": {
+        "type": "object_count",
+        "class_name": "battery",
+        "roi_id": "battery_compartment",
+        "min_count": 1,
+        "max_count": 1,
+        "confidence": 0.35,
+        "stable_frames": 3
+      }
+    },
+    {
+      "id": "remove_second_battery",
+      "order": 4,
+      "name": "拆下第二节电池",
+      "required": true,
+      "trigger": {
+        "type": "object_count",
+        "class_name": "battery",
+        "roi_id": "battery_compartment",
+        "min_count": 0,
+        "max_count": 0,
+        "confidence": 0.35,
+        "stable_frames": 3
+      }
+    },
+    {
+      "id": "install_first_battery",
+      "order": 5,
+      "name": "安装第一节电池",
+      "required": true,
+      "trigger": {
+        "type": "object_count",
+        "class_name": "battery",
+        "roi_id": "battery_compartment",
+        "min_count": 1,
+        "max_count": 1,
+        "confidence": 0.35,
+        "stable_frames": 3
+      }
+    },
+    {
+      "id": "install_second_battery",
+      "order": 6,
+      "name": "安装第二节电池",
+      "required": true,
+      "trigger": {
+        "type": "object_count",
+        "class_name": "battery",
+        "roi_id": "battery_compartment",
+        "min_count": 2,
+        "max_count": 2,
+        "confidence": 0.35,
+        "stable_frames": 3
+      }
+    },
+    {
+      "id": "close_battery_cover",
+      "order": 7,
+      "name": "盖上电池盖",
+      "required": true,
+      "trigger": {
+        "type": "object_in_roi",
+        "confidence": 0.4,
+        "stable_frames": 3,
+        "class_name": "battery_cover_closed",
+        "roi_id": "battery_compartment"
+      }
+    },
+    {
+      "id": "flip_to_front",
+      "order": 8,
+      "name": "键盘翻至正面",
+      "required": true,
+      "trigger": {
+        "type": "object_in_roi",
+        "confidence": 0.4,
+        "stable_frames": 3,
+        "class_name": "keyboard_front",
+        "roi_id": "keyboard_area"
+      }
+    },
+    {
+      "id": "process_finished",
+      "order": 9,
+      "name": "流程结束",
+      "required": true,
+      "trigger": {
+        "type": "duration",
+        "duration_sec": 1.0,
+        "condition": {
+          "type": "object_in_roi",
+          "class_name": "keyboard_front",
+          "roi_id": "keyboard_area",
+          "confidence": 0.4
+        }
+      }
+    }
+  ]
+}

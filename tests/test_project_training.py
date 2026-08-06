@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.config import DEFAULT_SOP_PROJECT_DIR
+from scripts.legacy_sk_config import DEFAULT_SOP_PROJECT_DIR
 from task_dispatcher import run_task
 
 
@@ -35,6 +35,11 @@ class ProjectTrainingTests(unittest.TestCase):
 
     @staticmethod
     def _fake_training(**kwargs):
+        for removed_option in ("export_torchscript", "export_onnx", "export_engine"):
+            if removed_option in kwargs:
+                raise AssertionError(f"training still received {removed_option}")
+        if not kwargs.get("training_control_dir") or not kwargs.get("training_task_id"):
+            raise AssertionError("project training did not configure progress/stop control")
         copy_best = Path(kwargs["copy_best_to"])
         copy_best.parent.mkdir(parents=True, exist_ok=True)
         copy_best.write_bytes(b"trained-model")
@@ -59,7 +64,6 @@ class ProjectTrainingTests(unittest.TestCase):
             "results_csv": str(results_csv),
             "args_yaml": str(args_yaml),
             "copied_best_model": str(copy_best),
-            "exported_models": {"torchscript": None, "onnx": None, "engine": None, "errors": []},
             "train_params": {"epochs": kwargs["epochs"], "data": str(kwargs["data_yaml_path"])},
             "log_path": str(log_path),
         }
@@ -93,6 +97,8 @@ class ProjectTrainingTests(unittest.TestCase):
                 project_data["active_model_manifest"],
                 "models/detector/1.0.0/model_manifest.json",
             )
+            self.assertNotIn("exported_models", result["training"])
+            self.assertEqual(model_manifest["training"]["status"], "completed")
 
     def test_rejects_existing_model_version(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

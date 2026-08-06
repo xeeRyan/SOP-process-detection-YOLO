@@ -37,19 +37,16 @@ struct SopAidHandLandmark {
 
 // 单只手的 21 点骨骼结果。
 struct SopAidHandResult {
+    // hand_id 仅用于同一帧结果排序，不保证跨帧保持稳定；需要稳定轨迹时应由调用方跟踪。
     int32_t hand_id = -1;
     float confidence = 0.0f;
     char handedness[16] = {};
     SopAidHandLandmark landmarks[SOPAID_HAND_LANDMARK_COUNT] = {};
 };
 
-extern "C" {
-SOPAID_API SopAidHandHandle SopAidHand_Init(const SopAidHandInitConfig* config, SopAidError* error);
-SOPAID_API void SopAidHand_Release(SopAidHandHandle handle);
-}
-
 namespace sopaid {
 
+// 返回的句柄拥有两个 OpenCV DNN 网络；不再使用时必须调用 HandRelease。
 SOPAID_API SopAidHandHandle HandInit(const SopAidHandInitConfig& config, SopAidError* error = nullptr);
 SOPAID_API SopAidStatus HandEvaluate(
     SopAidHandHandle handle,

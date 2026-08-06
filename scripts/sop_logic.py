@@ -1,18 +1,19 @@
+"""按工作流触发条件推进SOP步骤状态。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Sequence
 
-from scripts.config import (
+from scripts.config import STEP_STABLE_FRAMES, TOOL_HOLD_FRAMES
+from scripts.legacy_sk_config import (
     SCREW_BIN_ROI,
     STEP_DEFINITIONS,
-    STEP_STABLE_FRAMES,
-    TOOL_HOLD_FRAMES,
     TOOL_HOME_ROI,
     WORK_ROI,
 )
-from scripts.detector import Detection
-from scripts.utils import labels_in_roi, point_in_roi
+from scripts.inference import Detection
+from scripts.utils import bbox_center_in_roi, labels_in_roi, point_in_roi
 
 
 # result.json 中 steps 数组的单步结果结构。
@@ -33,6 +34,9 @@ class StepResult:
     minimum_confidence: float = 0.0
     stable_frames: int | None = None
     timeout_sec: float | None = None
+    required: bool = True
+    event_type: str | None = None
+    trigger_config: dict[str, Any] | None = None
     status: str = "pending"
     frame: int | None = None
     time: float | None = None
@@ -50,6 +54,9 @@ class StepResult:
             "allow_hand_pose": self.allow_hand_pose,
             "trigger_type": self.trigger_type,
             "minimum_confidence": self.minimum_confidence,
+            "required": self.required,
+            "event_type": self.event_type,
+            "trigger_config": self.trigger_config,
             "status": self.status,
             "frame": self.frame,
             "time": self.time,
@@ -102,6 +109,7 @@ class SOPStateMachine:
         self.trigger_sources = trigger_sources or {}
         self.step_timeouts_sec = step_timeouts_sec or {}
         self._step_started_at: float | None = None
+        self._duration_started_at: dict[str, float] = {}
 
     @property
     def current_step(self) -> StepResult | None:
@@ -124,6 +132,7 @@ class SOPStateMachine:
         frame_id: int,
         time_sec: float,
         hands: list[Any] | None = None,
+        events: list[Any] | None = None,
     ) -> None:
         """更新状态机。
 
@@ -148,37 +157,39 @@ class SOPStateMachine:
         if timeout_sec is not None and timeout_sec <= 0:
             raise ValueError(f"步骤 {step.key} 的超时时间必须大于 0")
         if timeout_sec is not None and time_sec - self._step_started_at > timeout_sec:
+            if not step.required:
+                step.status = "skipped"
+                self.current_index += 1
+                self._reset_step_progress(time_sec)
+                self.update(detections, frame_id, time_sec, hands=hands, events=events)
+                return
             self.reason = f"步骤超时: {step.key} 超过 {timeout_sec} 秒未完成"
             self._mark_remaining_failed()
             return
 
-        roi = self.rois.get(step.roi_name)
-        eligible_detections = [item for item in detections if item.conf >= step.minimum_confidence]
-        if step.trigger_type == "object_present":
-            in_roi = {item.class_name for item in eligible_detections}
-        else:
-            if roi is None:
-                raise ValueError(f"步骤 {step.key} 引用了不存在的 ROI: {step.roi_name}")
-            in_roi = labels_in_roi(eligible_detections, roi)
-        expected = set(step.trigger_classes)
-        trigger_source_mode = self.trigger_sources.get(step.key, "auto")
-        if trigger_source_mode not in {"auto", "yolo", "hand_pose"}:
-            raise ValueError(f"步骤 {step.key} 的 trigger_source 只支持 auto、yolo、hand_pose")
-        yolo_sources = sorted(expected & in_roi) if trigger_source_mode in {"auto", "yolo"} else []
-        yolo_hit = bool(yolo_sources)
-        hand_hit = (
-            (step.allow_hand_pose or step.trigger_type == "hand_in_roi")
-            and trigger_source_mode in {"auto", "hand_pose"}
-            and roi is not None
-            and self._hand_pose_in_roi(hands or [], roi)
+        trigger_source = self._evaluate_step_trigger(
+            step, detections, hands or [], events or [], time_sec
         )
-        trigger_source = self._resolve_trigger_source(yolo_sources, hand_hit)
+        yolo_hit = trigger_source is not None and trigger_source != "hand_pose"
+
+        # 可选步骤不能阻塞后续必需步骤。后续必需条件已经出现时，将当前
+        # 可选步骤标记为 skipped，并用同一帧继续判断下一步骤。
+        if not step.required and trigger_source is None:
+            later_required = next((item for item in self.steps[self.current_index + 1 :] if item.required), None)
+            if later_required is not None and self._evaluate_step_trigger(
+                later_required, detections, hands or [], events or [], time_sec
+            ):
+                step.status = "skipped"
+                self.current_index += 1
+                self._reset_step_progress(time_sec)
+                self.update(detections, frame_id, time_sec, hands=hands, events=events)
+                return
 
         # 顺序错误输出到 reason 字段，供软件端直接展示或记录。
         later_work_classes = {
             trigger_class
             for item in self.steps[self.current_index + 1 :]
-            if item.roi_name == "work"
+            if item.required and item.roi_name == "work"
             for trigger_class in item.trigger_classes
         }
         work_roi = self.rois.get("work")
@@ -196,7 +207,9 @@ class SOPStateMachine:
         # 连续稳定帧计数，避免单帧误检导致步骤误触发。
         self._stable_counter += 1
         self._stable_trigger_source = trigger_source
-        required_frames = step.stable_frames or (
+        required_frames = 1 if (
+            step.event_type or step.trigger_type in {"object_transition", "duration"}
+        ) else step.stable_frames or (
             self.tool_hold_frames if step.key == "tool_return" else self.step_stable_frames
         )
         if self._stable_counter < required_frames:
@@ -207,9 +220,7 @@ class SOPStateMachine:
         step.time = round(time_sec, 3)
         step.trigger_source = self._stable_trigger_source
         self.current_index += 1
-        self._stable_counter = 0
-        self._stable_trigger_source = None
-        self._step_started_at = time_sec
+        self._reset_step_progress(time_sec)
 
         if self.current_index >= len(self.steps):
             self.final_result = "OK"
@@ -217,10 +228,16 @@ class SOPStateMachine:
     def finalize(self, video_name: str) -> dict:
         """生成最终 SOP 结果字典。"""
 
+        for step in self.steps:
+            if not step.required and step.status == "pending":
+                step.status = "skipped"
         if self.final_result != "OK" and not self.reason:
-            missing = [step.name for step in self.steps if step.status != "done"]
-            self.reason = "步骤缺失: " + "、".join(missing)
-            self._mark_remaining_failed()
+            missing = [step.name for step in self.steps if step.required and step.status != "done"]
+            if missing:
+                self.reason = "步骤缺失: " + "、".join(missing)
+                self._mark_remaining_failed()
+            else:
+                self.final_result = "OK"
 
         return {
             "video_name": video_name,
@@ -232,7 +249,191 @@ class SOPStateMachine:
     def _mark_remaining_failed(self) -> None:
         for step in self.steps:
             if step.status != "done":
-                step.status = "failed"
+                step.status = "failed" if step.required else "skipped"
+
+    def _reset_step_progress(self, time_sec: float) -> None:
+        self._stable_counter = 0
+        self._stable_trigger_source = None
+        self._step_started_at = time_sec
+        self._duration_started_at.clear()
+
+    def _evaluate_step_trigger(
+        self,
+        step: StepResult,
+        detections: list[Detection],
+        hands: list[Any],
+        events: list[Any],
+        time_sec: float,
+    ) -> str | None:
+        if step.trigger_type in {"composite", "object_count", "object_transition", "duration"}:
+            matched, sources = self._evaluate_condition(
+                step.trigger_config or {},
+                detections,
+                hands,
+                events,
+                time_sec,
+                step.key,
+            )
+            return "+".join(sorted(sources)) if matched else None
+        if step.event_type:
+            matched = [
+                event
+                for event in events
+                if event.event_type == step.event_type
+                and (not step.trigger_classes or event.class_name in step.trigger_classes)
+                and (not step.roi_name or event.roi_id == step.roi_name)
+            ]
+            if matched:
+                return "+".join(sorted({event.class_name for event in matched}))
+            return None
+        roi = self.rois.get(step.roi_name)
+        eligible = [item for item in detections if item.conf >= step.minimum_confidence]
+        if step.trigger_type == "object_present":
+            matched_classes = {item.class_name for item in eligible}
+        else:
+            if roi is None:
+                raise ValueError(f"步骤 {step.key} 引用了不存在的 ROI: {step.roi_name}")
+            matched_classes = labels_in_roi(eligible, roi)
+        trigger_source_mode = self.trigger_sources.get(step.key, "auto")
+        if trigger_source_mode not in {"auto", "yolo", "hand_pose"}:
+            raise ValueError(f"步骤 {step.key} 的 trigger_source 只支持 auto、yolo、hand_pose")
+        yolo_sources = (
+            sorted(set(step.trigger_classes) & matched_classes)
+            if trigger_source_mode in {"auto", "yolo"}
+            else []
+        )
+        hand_hit = (
+            (step.allow_hand_pose or step.trigger_type == "hand_in_roi")
+            and trigger_source_mode in {"auto", "hand_pose"}
+            and roi is not None
+            and self._hand_pose_in_roi(hands, roi)
+        )
+        return self._resolve_trigger_source(yolo_sources, hand_hit)
+
+    def _evaluate_condition(
+        self,
+        condition: dict[str, Any],
+        detections: list[Detection],
+        hands: list[Any],
+        events: list[Any],
+        time_sec: float,
+        state_key: str,
+    ) -> tuple[bool, set[str]]:
+        condition_type = str(condition.get("type", "object_in_roi"))
+        minimum_confidence = float(condition.get("confidence", 0.0))
+        eligible = [item for item in detections if item.conf >= minimum_confidence]
+        class_name = str(condition.get("class_name", "")).strip()
+        roi_id = str(condition.get("roi_id", "")).strip()
+
+        if condition_type == "composite":
+            operator = str(condition.get("operator", "all")).lower()
+            evaluated = [
+                self._evaluate_condition(
+                    item,
+                    detections,
+                    hands,
+                    events,
+                    time_sec,
+                    f"{state_key}.{index}",
+                )
+                for index, item in enumerate(condition.get("conditions", []))
+            ]
+            matched = all(item[0] for item in evaluated) if operator == "all" else any(
+                item[0] for item in evaluated
+            )
+            sources = {
+                source
+                for item_matched, item_sources in evaluated
+                if item_matched
+                for source in item_sources
+            }
+            return matched, sources
+
+        if condition_type == "object_count":
+            roi = self.rois.get(roi_id) if roi_id else None
+            matched_detections = [
+                item
+                for item in eligible
+                if (not class_name or item.class_name == class_name)
+                and (roi is None or bbox_center_in_roi(item.bbox, roi))
+            ]
+            count = len({item.track_id for item in matched_detections if item.track_id is not None})
+            count += sum(1 for item in matched_detections if item.track_id is None)
+            minimum = int(condition.get("min_count", condition.get("count", 1)))
+            maximum = condition.get("max_count")
+            matched = count >= minimum and (maximum is None or count <= int(maximum))
+            return matched, {f"count:{class_name or '*'}={count}"} if matched else set()
+
+        if condition_type == "object_transition":
+            from_roi_id = str(condition.get("from_roi_id", "")).strip()
+            to_roi_id = str(condition.get("to_roi_id", "")).strip()
+            matched_events = [
+                event
+                for event in events
+                if event.event_type == "object_move_roi"
+                and (not class_name or event.class_name == class_name)
+                and event.from_roi_id == from_roi_id
+                and event.to_roi_id == to_roi_id
+            ]
+            return bool(matched_events), {
+                f"move:{event.class_name}:{from_roi_id}->{to_roi_id}"
+                for event in matched_events
+            }
+
+        if condition_type == "object_event":
+            event_type = str(condition.get("event", "")).strip()
+            matched_events = [
+                event
+                for event in events
+                if event.event_type == event_type
+                and (not class_name or event.class_name == class_name)
+                and (not roi_id or event.roi_id == roi_id)
+            ]
+            return bool(matched_events), {event.class_name for event in matched_events}
+
+        if condition_type == "duration":
+            nested = condition.get("condition", {})
+            nested_matched, sources = self._evaluate_condition(
+                nested,
+                detections,
+                hands,
+                events,
+                time_sec,
+                f"{state_key}.condition",
+            )
+            if not nested_matched:
+                self._duration_started_at.pop(state_key, None)
+                return False, set()
+            started_at = self._duration_started_at.setdefault(state_key, time_sec)
+            required_seconds = float(condition.get("duration_sec", 0.0))
+            return time_sec - started_at >= required_seconds, sources
+
+        if condition_type == "object_present":
+            matched = {
+                item.class_name
+                for item in eligible
+                if not class_name or item.class_name == class_name
+            }
+            return bool(matched), matched
+
+        if condition_type == "hand_in_roi":
+            roi = self.rois.get(roi_id)
+            matched = roi is not None and self._hand_pose_in_roi(hands, roi)
+            return matched, {"hand_pose"} if matched else set()
+
+        if condition_type == "object_in_roi":
+            roi = self.rois.get(roi_id)
+            if roi is None:
+                return False, set()
+            matched = {
+                item.class_name
+                for item in eligible
+                if (not class_name or item.class_name == class_name)
+                and bbox_center_in_roi(item.bbox, roi)
+            }
+            return bool(matched), matched
+
+        return False, set()
 
     def _hand_pose_in_roi(self, hands: list[Any], roi: Sequence[int]) -> bool:
         """判断任意手部关键点是否进入指定 ROI。"""
@@ -272,6 +473,13 @@ class SOPStateMachine:
                     "minimum_confidence": float(trigger.get("confidence", 0.0)),
                     "stable_frames": int(trigger.get("stable_frames", 3)),
                     "timeout_sec": float(step["timeout_sec"]) if step.get("timeout_sec") is not None else None,
+                    "required": bool(step.get("required", True)),
+                    "event_type": (
+                        str(trigger.get("event"))
+                        if trigger.get("event")
+                        else "object_enter_roi" if trigger.get("require_transition") else None
+                    ),
+                    "trigger_config": dict(trigger),
                 }
             )
         return definitions

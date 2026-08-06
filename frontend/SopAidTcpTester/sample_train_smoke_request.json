@@ -24,25 +24,6 @@
                    "flipud":  0.0,
                    "mosaic":  1.0,
                    "mixup":  0.0,
-                   "copy_paste":  0.0,
-                   "export_onnx":  true,
-                   "export_engine":  false,
-                   "onnx_output_path":  "models/wpf_train_smoke_best.onnx",
-                   "engine_output_path":  "models/wpf_train_smoke_best.engine",
-                   "export_imgsz":  320,
-                   "export_opset":  12,
-                   "export_dynamic":  false,
-                   "export_simplify":  true,
-                   "export_overwrite":  true,
-                   "trtexec_path":  "trtexec",
-                   "engine_fp16":  true,
-                   "engine_workspace_mb":  null,
-                   "engine_verbose":  false,
-                   "engine_dry_run":  false,
-                   "export_strict":  false,
-                   "export_python_path":  "E:\\Project\\SOPAID\\SOPAID\\.venv\\Scripts\\python.exe",
-                   "export_torchscript":  true,
-                   "torchscript_output_path":  "models/wpf_train_smoke_best.torchscript",
-                   "torchscript_optimize":  false
+                   "copy_paste":  0.0
                }
 }

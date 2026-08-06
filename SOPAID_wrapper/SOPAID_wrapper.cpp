@@ -1,8 +1,26 @@
-#include "pch.h"
+﻿#include "pch.h"
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
+#pragma push_macro("IServiceProvider")
+#define IServiceProvider NativeIServiceProvider
+#include <vector>
+#include "SopAidHandPose.h"
+#include "SopAidInfer.h"
+#pragma pop_macro("IServiceProvider")
 
 #include "SOPAID_wrapper.h"
 
 #include <msclr/marshal_cppstd.h>
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
+#include <opencv2/imgproc.hpp>
 
 using namespace msclr::interop;
 
@@ -66,6 +84,19 @@ namespace {
 		return true;
 	}
 
+	void NormalizeToBgr(const cv::Mat& input, int channels, cv::Mat& output)
+	{
+		if (channels == 1) {
+			cv::cvtColor(input, output, cv::COLOR_GRAY2BGR);
+		}
+		else if (channels == 4) {
+			cv::cvtColor(input, output, cv::COLOR_BGRA2BGR);
+		}
+		else {
+			output = input;
+		}
+	}
+
 }
 
 namespace SOPAIDwrapper {
@@ -100,6 +131,18 @@ namespace SOPAIDwrapper {
 		DeviceId = 0;
 	}
 
+	ProjectInferenceConfig::ProjectInferenceConfig()
+	{
+		ProjectDirectory = String::Empty;
+		PreferredFormat = ModelFormat::Auto;
+		InputWidth = 640;
+		InputHeight = 640;
+		ConfidenceThreshold = 0.25f;
+		NmsThreshold = 0.70f;
+		UseCuda = false;
+		DeviceId = 0;
+	}
+
 	float DetectionResult::Width::get()
 	{
 		return X2 - X1;
@@ -123,6 +166,14 @@ namespace SOPAIDwrapper {
 		Init(config);
 	}
 
+	InferenceEvaluator::InferenceEvaluator(ProjectInferenceConfig^ config)
+		: inference_(nullptr),
+		lastError_(gcnew InferenceErrorInfo())
+	{
+		InitProject(config);
+	}
+
+	// 确定性析构对应 IDisposable.Dispose，并复用终结器中的原生资源释放逻辑。
 	InferenceEvaluator::~InferenceEvaluator()
 	{
 		this->!InferenceEvaluator();
@@ -150,6 +201,7 @@ namespace SOPAIDwrapper {
 			return false;
 		}
 
+		// 原生配置只借用 c_str()；这些局部字符串必须存活到 Init 返回。
 		std::string modelPath = ToStdString(config->ModelPath);
 		std::string classNames = ToStdString(config->ClassNamesCsv);
 
@@ -175,6 +227,61 @@ namespace SOPAIDwrapper {
 		const SopAidStatus status = inference_->Init(nativeConfig, &error);
 		SetLastError(error);
 		return status == SopAidStatus::Ok;
+	}
+
+	bool InferenceEvaluator::InitProject(ProjectInferenceConfig^ config)
+	{
+		if (config == nullptr) {
+			SetLastError(InferenceStatus::InvalidArgument, "config is null.");
+			return false;
+		}
+		if (String::IsNullOrWhiteSpace(config->ProjectDirectory)) {
+			SetLastError(InferenceStatus::InvalidArgument, "ProjectDirectory is empty.");
+			return false;
+		}
+
+		std::string projectDirectory = ToStdString(config->ProjectDirectory);
+		SopAidProjectDirectoryConfig nativeConfig{};
+		nativeConfig.project_dir = projectDirectory.c_str();
+		nativeConfig.preferred_model_format = ToNativeModelFormat(config->PreferredFormat);
+		nativeConfig.input_width = config->InputWidth;
+		nativeConfig.input_height = config->InputHeight;
+		nativeConfig.confidence_threshold = config->ConfidenceThreshold;
+		nativeConfig.nms_threshold = config->NmsThreshold;
+		nativeConfig.use_cuda = config->UseCuda;
+		nativeConfig.device_id = config->DeviceId;
+
+		if (inference_ == nullptr) inference_ = new sopaid::Inference();
+		else inference_->Release();
+
+		SopAidError error{};
+		const SopAidStatus status = inference_->InitProjectDirectory(nativeConfig, &error);
+		SetLastError(error);
+		return status == SopAidStatus::Ok;
+	}
+
+	ModelInfo^ InferenceEvaluator::GetModelInfo()
+	{
+		if (inference_ == nullptr || !inference_->IsInitialized()) {
+			SetLastError(InferenceStatus::InvalidArgument, "Inference evaluator is not initialized.");
+			return nullptr;
+		}
+		SopAidModelInfo nativeInfo{};
+		SopAidError error{};
+		const SopAidStatus status = inference_->GetModelInfo(nativeInfo, &error);
+		SetLastError(error);
+		if (status != SopAidStatus::Ok) return nullptr;
+
+		ModelInfo^ info = gcnew ModelInfo();
+		info->ProjectId = ToManagedString(nativeInfo.project_id);
+		info->ModelId = ToManagedString(nativeInfo.model_id);
+		info->ModelVersion = ToManagedString(nativeInfo.model_version);
+		info->ModelPath = ToManagedString(nativeInfo.model_path);
+		info->Backend = ToManagedString(nativeInfo.backend);
+		info->InputWidth = nativeInfo.input_width;
+		info->InputHeight = nativeInfo.input_height;
+		info->ClassCount = nativeInfo.class_count;
+		return info;
 	}
 
 	bool InferenceEvaluator::Evaluate(array<Byte>^ imageData, int width, int height, int channels, List<DetectionResult^>^ results)
@@ -207,12 +314,15 @@ namespace SOPAIDwrapper {
 			return false;
 		}
 
+		// 推理期间固定托管数组，防止 GC 移动底层地址；cv::Mat 只是零拷贝视图，不拥有该内存。
 		pin_ptr<Byte> pinned = &imageData[0];
 		cv::Mat image(height, width, CV_MAKETYPE(CV_8U, channels), pinned, stride);
+		cv::Mat bgrImage;
+		NormalizeToBgr(image, channels, bgrImage);
 
 		std::vector<SopAidDetection> nativeResults;
 		SopAidError error{};
-		const SopAidStatus status = inference_->Evaluate(image, nativeResults, &error);
+		const SopAidStatus status = inference_->Evaluate(bgrImage, nativeResults, &error);
 		SetLastError(error);
 		if (status != SopAidStatus::Ok) {
 			return false;
@@ -297,6 +407,7 @@ namespace SOPAIDwrapper {
 		Init(config);
 	}
 
+	// 与 InferenceEvaluator 一致，Dispose 和 GC 终结路径最终只释放一次原生句柄。
 	HandPoseEvaluator::~HandPoseEvaluator()
 	{
 		this->!HandPoseEvaluator();
@@ -382,12 +493,15 @@ namespace SOPAIDwrapper {
 			return false;
 		}
 
+		// 固定数组的生命周期覆盖整个原生调用；颜色转换产生的 Mat 则自行持有转换后内存。
 		pin_ptr<Byte> pinned = &imageData[0];
 		cv::Mat image(height, width, CV_MAKETYPE(CV_8U, channels), pinned, stride);
+		cv::Mat bgrImage;
+		NormalizeToBgr(image, channels, bgrImage);
 
 		std::vector<SopAidHandResult> nativeResults;
 		SopAidError error{};
-		const SopAidStatus status = sopaid::HandEvaluate(handle_, image, nativeResults, &error);
+		const SopAidStatus status = sopaid::HandEvaluate(handle_, bgrImage, nativeResults, &error);
 		SetLastError(error);
 		if (status != SopAidStatus::Ok) {
 			return false;

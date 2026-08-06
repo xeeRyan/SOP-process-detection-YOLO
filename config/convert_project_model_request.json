@@ -1,0 +1,24 @@
+{
+  "command": "convert_project_model",
+  "params": {
+    "sop_project_dir": "projects/SK_DEMO",
+    "model_id": "sk_detector",
+    "model_version": "1.0.0",
+    "formats": [
+      "torchscript",
+      "onnx",
+      "engine"
+    ],
+    "overwrite": false,
+    "export_imgsz": 640,
+    "export_opset": 12,
+    "export_dynamic": false,
+    "export_simplify": true,
+    "torchscript_optimize": false,
+    "trtexec_path": "trtexec",
+    "engine_fp16": true,
+    "engine_workspace_mb": null,
+    "engine_verbose": false,
+    "engine_dry_run": false
+  }
+}

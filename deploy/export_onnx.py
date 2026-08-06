@@ -1,4 +1,6 @@
-﻿from __future__ import annotations
+"""将Ultralytics训练checkpoint导出为ONNX模型。"""
+
+from __future__ import annotations
 
 import argparse
 import shutil

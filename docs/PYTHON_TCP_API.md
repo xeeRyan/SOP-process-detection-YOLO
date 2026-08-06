@@ -186,15 +186,7 @@ close
     "mosaic": 1.0,
     "mixup": 0.0,
     "copy_paste": 0.0,
-    "copy_best_to": "models/best_yolo26s_ui_exp.pt",
-    "export_onnx": true,
-    "export_engine": false,
-    "onnx_output_path": "models/best_yolo26s_ui_exp.onnx",
-    "engine_output_path": "models/best_yolo26s_ui_exp.engine",
-    "export_imgsz": 640,
-    "export_opset": 12,
-    "export_overwrite": true,
-    "trtexec_path": "trtexec"
+    "copy_best_to": "models/best_yolo26s_ui_exp.pt"
   }
 }
 ```
@@ -242,11 +234,38 @@ close
 | `results_csv` | 训练指标 CSV 路径。 |
 | `args_yaml` | YOLO 本次训练参数记录。 |
 | `copied_best_model` | 复制后的最终模型路径。 |
-| `exported_models` | ????? ONNX / TensorRT engine ?????????? |
 | `train_params` | 本次实际生效的训练参数。 |
 | `log_path` | 本次训练日志路径。 |
 
-## 8. detect 视频检测接口
+训练接口只生成原始 PyTorch checkpoint。项目模型需要通过独立转换接口生成部署格式。
+
+## 8. convert_project_model 模型转换接口
+
+该接口针对 `train_project` 已登记的模型版本，将 `best.pt` 按需转换为 TorchScript、ONNX 和 TensorRT Engine。
+
+```json
+{
+  "command": "convert_project_model",
+  "params": {
+    "sop_project_dir": "projects/SK_DEMO",
+    "model_id": "sk_detector",
+    "model_version": "1.0.0",
+    "formats": ["torchscript", "onnx", "engine"],
+    "overwrite": false,
+    "export_imgsz": 640,
+    "export_opset": 12,
+    "export_dynamic": false,
+    "export_simplify": true,
+    "torchscript_optimize": false,
+    "trtexec_path": "trtexec",
+    "engine_fp16": true
+  }
+}
+```
+
+`formats` 必须至少包含一个受支持格式。只选择 `engine` 时，如果同一模型版本已有 `best.onnx`，系统会直接复用；否则先自动生成 ONNX。每种格式独立返回 `success` 或 `failed`，成功产物会写入 `model_manifest.json`。
+
+## 9. detect 视频检测接口
 
 请求示例：
 

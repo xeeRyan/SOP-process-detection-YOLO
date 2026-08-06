@@ -24,11 +24,23 @@ public partial class MainWindow : Window
     private BitmapImage? _roiBitmap;
     private Point? _roiDragStart;
     private Rectangle? _roiDraftRectangle;
+    private bool _trainingActive;
+    private string? _activeTrainingTaskId;
+    private string? _activeTrainingProjectDir;
     private static readonly Brush[] RoiColors = [Brushes.LimeGreen, Brushes.Orange, Brushes.DeepSkyBlue, Brushes.Magenta, Brushes.Gold];
     public ObservableCollection<WorkflowStepItem> WorkflowSteps { get; } = [];
     public ObservableCollection<string> AvailableClassNames { get; } = [];
     public ObservableCollection<string> AvailableRoiIds { get; } = [];
-    public IReadOnlyList<string> TriggerTypes { get; } = ["object_in_roi", "object_present", "hand_in_roi"];
+    public IReadOnlyList<string> TriggerTypes { get; } =
+    [
+        "object_in_roi", "object_present", "hand_in_roi", "object_event",
+        "composite", "object_count", "object_transition", "duration"
+    ];
+    public IReadOnlyList<string> EventTypes { get; } =
+    [
+        "", "object_appear", "object_disappear", "object_enter_roi",
+        "object_exit_roi", "object_move_roi"
+    ];
 
     public MainWindow()
     {
@@ -42,14 +54,21 @@ public partial class MainWindow : Window
         RequestTextBox.Text = FormatJson(new { command = "health" });
         AppendLog("前端联调 Demo 已启动。请先检查算法服务。");
         RefreshModelChoices();
+        RefreshConversionModelChoices();
+        RefreshDatasetChoices();
     }
 
     private async void HealthButton_Click(object sender, RoutedEventArgs e)
     {
         var response = await SendCommandAsync(new { command = "health" });
         var ok = response?["status"]?.GetValue<string>() == "ok";
+        var supportsTrainingControl = HasCapability(response, "training_stop_after_epoch");
         ServiceIndicator.Fill = new SolidColorBrush(ok ? Color.FromRgb(34, 197, 94) : Color.FromRgb(239, 68, 68));
-        ServiceStatusText.Text = ok ? "服务在线" : "服务异常";
+        ServiceStatusText.Text = ok && supportsTrainingControl ? "服务在线" : ok ? "旧版服务" : "服务异常";
+        if (ok && !supportsTrainingControl)
+        {
+            AppendLog("当前9000端口连接的是旧版算法服务，不支持训练进度和停止控制。请先关闭旧服务再启动新版。");
+        }
     }
 
     private async void ListProjectsButton_Click(object sender, RoutedEventArgs e)
@@ -176,7 +195,7 @@ public partial class MainWindow : Window
             @params = new
             {
                 sop_project_dir = GetProjectDir(),
-                dataset_name = DatasetNameTextBox.Text.Trim(),
+                dataset_name = DatasetNameComboBox.Text.Trim(),
                 train_ratio = ParseDouble(TrainRatioTextBox, "训练比例"),
                 val_ratio = ParseDouble(ValRatioTextBox, "验证比例"),
                 test_ratio = ParseDouble(TestRatioTextBox, "测试比例"),
@@ -185,15 +204,22 @@ public partial class MainWindow : Window
                 require_all_splits = true,
             },
         });
+        RefreshDatasetChoices();
     }
 
     private async void TrainProjectButton_Click(object sender, RoutedEventArgs e)
     {
+        var health = await SendCommandAsync(new { command = "health" });
+        if (!HasCapability(health, "training_stop_after_epoch"))
+        {
+            AppendLog("已阻止训练：当前算法服务版本过旧，无法提供训练进度和安全停止。请重启新版服务。");
+            return;
+        }
         var baseModel = BaseModelTextBox.Text.Trim();
         var parameters = new JsonObject
         {
             ["sop_project_dir"] = GetProjectDir(),
-            ["dataset_name"] = DatasetNameTextBox.Text.Trim(),
+            ["dataset_name"] = DatasetNameComboBox.Text.Trim(),
             ["model_id"] = ModelIdTextBox.Text.Trim(),
             ["model_version"] = ModelVersionTextBox.Text.Trim(),
             ["epochs"] = ParseInt(EpochsTextBox, "Epochs"),
@@ -202,26 +228,11 @@ public partial class MainWindow : Window
             ["workers"] = ParseInt(WorkersTextBox, "Workers"),
             ["optimizer"] = OptimizerComboBox.Text.Trim(),
             ["amp"] = AmpCheckBox.IsChecked == true,
-            ["export_torchscript"] = ExportTorchScriptCheckBox.IsChecked == true,
-            ["export_onnx"] = ExportOnnxCheckBox.IsChecked == true,
-            ["export_engine"] = ExportEngineCheckBox.IsChecked == true,
-            ["export_imgsz"] = ParseInt(ExportImageSizeTextBox, "Export Image Size"),
-            ["export_opset"] = ParseInt(ExportOpsetTextBox, "ONNX Opset"),
-            ["export_dynamic"] = ExportDynamicCheckBox.IsChecked == true,
-            ["export_simplify"] = ExportSimplifyCheckBox.IsChecked == true,
-            ["torchscript_optimize"] = TorchScriptOptimizeCheckBox.IsChecked == true,
-            ["export_strict"] = ExportStrictCheckBox.IsChecked == true,
-            ["trtexec_path"] = TrtExecPathTextBox.Text.Trim(),
-            ["engine_fp16"] = EngineFp16CheckBox.IsChecked == true,
-            ["engine_verbose"] = EngineVerboseCheckBox.IsChecked == true,
-            ["engine_dry_run"] = EngineDryRunCheckBox.IsChecked == true,
             ["set_active"] = SetActiveModelCheckBox.IsChecked == true,
         };
         if (!string.IsNullOrWhiteSpace(baseModel)) parameters["base_model_path"] = baseModel;
         SetOptionalText(parameters, "run_name", RunNameTextBox);
         SetOptionalText(parameters, "device", DeviceTextBox);
-        SetOptionalText(parameters, "export_python_path", ExportPythonPathTextBox);
-        SetOptionalInt(parameters, "engine_workspace_mb", EngineWorkspaceTextBox, "Engine Workspace MB");
         SetOptionalDouble(parameters, "hsv_h", HsvHTextBox);
         SetOptionalDouble(parameters, "hsv_s", HsvSTextBox);
         SetOptionalDouble(parameters, "hsv_v", HsvVTextBox);
@@ -234,7 +245,135 @@ public partial class MainWindow : Window
         SetOptionalDouble(parameters, "mosaic", MosaicTextBox);
         SetOptionalDouble(parameters, "mixup", MixupTextBox);
         SetOptionalDouble(parameters, "copy_paste", CopyPasteTextBox);
-        await SendCommandAsync(new JsonObject { ["command"] = "train_project", ["params"] = parameters });
+        _trainingActive = true;
+        _activeTrainingTaskId = $"{ModelIdTextBox.Text.Trim()}_{ModelVersionTextBox.Text.Trim()}";
+        _activeTrainingProjectDir = GetProjectDir();
+        TrainProjectButton.IsEnabled = false;
+        StopTrainingButton.IsEnabled = false;
+        StopTrainingButton.Content = "完成当前轮后停止";
+        TrainingProgressBar.Value = 0;
+        TrainingProgressText.Text = "正在启动训练……";
+        var requestTask = SendCommandAsync(new JsonObject { ["command"] = "train_project", ["params"] = parameters });
+        try
+        {
+            while (!requestTask.IsCompleted)
+            {
+                RefreshTrainingStatus();
+                await Task.WhenAny(requestTask, Task.Delay(1000));
+            }
+            await requestTask;
+            RefreshTrainingStatus();
+            RefreshConversionModelChoices();
+        }
+        finally
+        {
+            _trainingActive = false;
+            _activeTrainingTaskId = null;
+            _activeTrainingProjectDir = null;
+            TrainProjectButton.IsEnabled = true;
+            StopTrainingButton.IsEnabled = false;
+        }
+    }
+
+    private void StopTrainingButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_trainingActive) return;
+        var taskId = _activeTrainingTaskId;
+        var projectDir = _activeTrainingProjectDir;
+        if (string.IsNullOrWhiteSpace(taskId) || string.IsNullOrWhiteSpace(projectDir)) return;
+        var controlPath = Path.Combine(projectDir, "outputs", "training", "stoptrain.json");
+        try
+        {
+            WriteJsonAtomic(controlPath, new JsonObject
+            {
+                ["task_id"] = taskId,
+                ["is_stop"] = true,
+            });
+            StopTrainingButton.IsEnabled = false;
+            StopTrainingButton.Content = "正在停止……";
+            TrainingProgressText.Text = "已请求停止，将在当前轮完成后结束";
+        }
+        catch (Exception ex)
+        {
+            AppendLog("停止训练请求写入失败: " + ex.Message);
+        }
+    }
+
+    private void RefreshTrainingStatus()
+    {
+        if (string.IsNullOrWhiteSpace(_activeTrainingTaskId) || string.IsNullOrWhiteSpace(_activeTrainingProjectDir)) return;
+        var statusPath = Path.Combine(_activeTrainingProjectDir, "outputs", "training", "training_status.json");
+        try
+        {
+            if (!File.Exists(statusPath) || JsonNode.Parse(File.ReadAllText(statusPath)) is not JsonObject status) return;
+            var expectedTaskId = _activeTrainingTaskId;
+            if (!string.Equals(status["task_id"]?.ToString(), expectedTaskId, StringComparison.Ordinal)) return;
+            var current = status["current_epoch"]?.GetValue<int>() ?? 0;
+            var total = status["total_epochs"]?.GetValue<int>() ?? 0;
+            var progress = status["progress_percent"]?.GetValue<double>() ?? 0;
+            var state = status["status"]?.ToString() ?? "running";
+            var message = status["message"]?.ToString() ?? string.Empty;
+            TrainingProgressBar.Value = Math.Clamp(progress, 0, 100);
+            TrainingProgressText.Text = $"{current} / {total}  {message}";
+            if (state == "stopping")
+            {
+                StopTrainingButton.IsEnabled = false;
+                StopTrainingButton.Content = "正在停止……";
+            }
+            else if (state == "running" && _trainingActive)
+            {
+                StopTrainingButton.IsEnabled = true;
+                StopTrainingButton.Content = "完成当前轮后停止";
+            }
+            else if (state is "completed" or "stopped" or "failed")
+            {
+                StopTrainingButton.IsEnabled = false;
+                StopTrainingButton.Content = "完成当前轮后停止";
+            }
+        }
+        catch (Exception ex) when (ex is IOException or JsonException)
+        {
+            // The backend replaces the file atomically; retry on the next polling tick.
+        }
+    }
+
+    private static void WriteJsonAtomic(string path, JsonObject data)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var temporary = path + ".tmp";
+        File.WriteAllText(temporary, data.ToJsonString(PrettyJson), Encoding.UTF8);
+        File.Move(temporary, path, true);
+    }
+
+    private async void ConvertProjectModelButton_Click(object sender, RoutedEventArgs e)
+    {
+        var formats = new JsonArray();
+        if (ExportTorchScriptCheckBox.IsChecked == true) formats.Add("torchscript");
+        if (ExportOnnxCheckBox.IsChecked == true) formats.Add("onnx");
+        if (ExportEngineCheckBox.IsChecked == true) formats.Add("engine");
+        if (formats.Count == 0)
+        {
+            throw new InvalidOperationException("请至少选择一种模型转换格式。");
+        }
+
+        if (ConversionModelComboBox.SelectedItem is not ModelVersionChoice selectedModel)
+        {
+            throw new InvalidOperationException("请先从下拉框选择一个已训练模型。");
+        }
+
+        var parameters = new JsonObject
+        {
+            ["sop_project_dir"] = GetProjectDir(),
+            ["model_id"] = selectedModel.ModelId,
+            ["model_version"] = selectedModel.ModelVersion,
+            ["formats"] = formats,
+            ["overwrite"] = ConversionOverwriteCheckBox.IsChecked == true,
+        };
+        await SendCommandAsync(new JsonObject
+        {
+            ["command"] = "convert_project_model",
+            ["params"] = parameters,
+        });
     }
 
     private async void DetectButton_Click(object sender, RoutedEventArgs e)
@@ -247,10 +386,14 @@ public partial class MainWindow : Window
             ["confidence_threshold"] = ParseDouble(ConfidenceTextBox, "置信度"),
             ["nms_threshold"] = ParseDouble(NmsThresholdTextBox, "NMS 阈值"),
             ["inference_device"] = (InferenceDeviceComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "auto",
+            ["inference_backend"] = (InferenceBackendComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "python",
             ["enable_yolo"] = EnableYoloCheckBox.IsChecked == true,
             ["enable_hand_pose"] = EnableHandPoseCheckBox.IsChecked == true,
             ["hand_pose_sample_interval"] = ParseInt(HandPoseIntervalTextBox, "手部采样间隔"),
             ["output_video"] = OutputVideoCheckBox.IsChecked == true,
+            ["tracking_iou_threshold"] = ParseDouble(TrackingIouTextBox, "跟踪 IoU 阈值"),
+            ["tracking_max_missing_frames"] = ParseInt(TrackingMissingTextBox, "跟踪最大丢失帧"),
+            ["event_lost_tolerance_frames"] = ParseInt(EventLostToleranceTextBox, "事件丢失容忍帧"),
             ["output_json"] = OutputJsonCheckBox.IsChecked == true,
             ["realtime_display"] = RealtimeDisplayCheckBox.IsChecked == true,
         };
@@ -616,12 +759,15 @@ public partial class MainWindow : Window
                 Name = node["name"]?.ToString() ?? string.Empty,
                 Required = node["required"]?.GetValue<bool>() ?? true,
                 TriggerType = trigger["type"]?.ToString() ?? "object_in_roi",
+                EventType = trigger["event"]?.ToString()
+                    ?? (trigger["require_transition"]?.GetValue<bool>() == true ? "object_enter_roi" : string.Empty),
                 ClassName = trigger["class_name"]?.ToString() ?? string.Empty,
                 RoiId = trigger["roi_id"]?.ToString() ?? string.Empty,
                 Confidence = trigger["confidence"]?.GetValue<double>() ?? 0.25,
                 StableFrames = trigger["stable_frames"]?.GetValue<int>() ?? 3,
                 AllowHandPose = trigger["allow_hand_pose"]?.GetValue<bool>() ?? false,
                 TimeoutSec = node["timeout_sec"]?.ToString() ?? string.Empty,
+                AdvancedTriggerJson = trigger.ToJsonString(),
             });
         }
         ResequenceWorkflowSteps();
@@ -640,23 +786,37 @@ public partial class MainWindow : Window
         ResequenceWorkflowSteps();
         foreach (var item in WorkflowSteps)
         {
+            var advanced = item.TriggerType is "composite" or "object_count"
+                or "object_transition" or "duration" or "object_event";
             if (string.IsNullOrWhiteSpace(item.Id) || !ids.Add(item.Id)) throw new InvalidOperationException($"步骤 ID 不能为空或重复: {item.Id}");
             if (string.IsNullOrWhiteSpace(item.Name)) throw new InvalidOperationException($"步骤 {item.Id} 缺少名称。");
             if (!TriggerTypes.Contains(item.TriggerType)) throw new InvalidOperationException($"步骤 {item.Id} 的触发方式无效。");
+            if (!EventTypes.Contains(item.EventType)) throw new InvalidOperationException($"步骤 {item.Id} 的对象事件无效。");
             if (item.Confidence is < 0 or > 1) throw new InvalidOperationException($"步骤 {item.Id} 的置信度必须位于 0～1。");
             if (item.StableFrames <= 0) throw new InvalidOperationException($"步骤 {item.Id} 的稳定帧必须大于 0。");
-            if (item.TriggerType != "hand_in_roi" && string.IsNullOrWhiteSpace(item.ClassName)) throw new InvalidOperationException($"步骤 {item.Id} 必须选择识别类别。");
-            if (item.TriggerType != "object_present" && string.IsNullOrWhiteSpace(item.RoiId)) throw new InvalidOperationException($"步骤 {item.Id} 必须选择 ROI。");
+            if (!advanced && item.TriggerType != "hand_in_roi" && string.IsNullOrWhiteSpace(item.ClassName)) throw new InvalidOperationException($"步骤 {item.Id} 必须选择识别类别。");
+            if (!advanced && item.TriggerType != "object_present" && string.IsNullOrWhiteSpace(item.RoiId)) throw new InvalidOperationException($"步骤 {item.Id} 必须选择 ROI。");
 
-            var trigger = new JsonObject
+            JsonObject trigger;
+            if (advanced)
             {
-                ["type"] = item.TriggerType,
-                ["confidence"] = item.Confidence,
-                ["stable_frames"] = item.StableFrames,
-            };
-            if (item.TriggerType != "hand_in_roi") trigger["class_name"] = item.ClassName;
-            if (item.TriggerType != "object_present") trigger["roi_id"] = item.RoiId;
-            if (item.AllowHandPose) trigger["allow_hand_pose"] = true;
+                trigger = ParseObject(item.AdvancedTriggerJson, $"步骤 {item.Id} 高级触发 JSON")
+                    ?? throw new InvalidOperationException($"步骤 {item.Id} 必须填写高级触发 JSON。");
+                trigger["type"] = item.TriggerType;
+            }
+            else
+            {
+                trigger = new JsonObject
+                {
+                    ["type"] = item.TriggerType,
+                    ["confidence"] = item.Confidence,
+                    ["stable_frames"] = item.StableFrames,
+                };
+                if (item.TriggerType != "hand_in_roi") trigger["class_name"] = item.ClassName;
+                if (item.TriggerType != "object_present") trigger["roi_id"] = item.RoiId;
+                if (item.AllowHandPose) trigger["allow_hand_pose"] = true;
+                if (!string.IsNullOrWhiteSpace(item.EventType)) trigger["event"] = item.EventType;
+            }
             var step = new JsonObject
             {
                 ["id"] = item.Id,
@@ -786,6 +946,8 @@ public partial class MainWindow : Window
         var ready = data["ready"]?.GetValue<bool>() ?? false;
         ProjectStateText.Text = $"状态：{status} · 配置{(ready ? "完整" : "未完成")}";
         RefreshModelChoices();
+        RefreshConversionModelChoices();
+        RefreshDatasetChoices();
         if (loadEditors)
         {
             if (data["rois"] is JsonNode rois) RoisJsonTextBox.Text = rois.ToJsonString(PrettyJson);
@@ -796,6 +958,12 @@ public partial class MainWindow : Window
     }
 
     private static JsonObject? GetData(JsonObject? response) => response?["data"] as JsonObject;
+
+    private static bool HasCapability(JsonObject? response, string capability)
+    {
+        var capabilities = GetData(response)?["capabilities"] as JsonArray;
+        return capabilities?.Any(item => string.Equals(item?.ToString(), capability, StringComparison.Ordinal)) == true;
+    }
 
     private List<ClassDefinition> ParseClasses()
     {
@@ -885,6 +1053,67 @@ public partial class MainWindow : Window
 
     private void RefreshModelsButton_Click(object sender, RoutedEventArgs e) => RefreshModelChoices();
 
+    private void RefreshConversionModelsButton_Click(object sender, RoutedEventArgs e) => RefreshConversionModelChoices();
+
+    private void RefreshDatasetChoices()
+    {
+        if (DatasetNameComboBox is null) return;
+        var previous = DatasetNameComboBox.Text.Trim();
+        var datasetRoot = Path.Combine(GetProjectDir(), "dataset");
+        var datasets = new List<string>();
+        if (Directory.Exists(datasetRoot))
+        {
+            datasets.AddRange(
+                Directory.EnumerateDirectories(datasetRoot)
+                    .Where(path => File.Exists(Path.Combine(path, "data.yaml"))
+                        && File.Exists(Path.Combine(path, "dataset_manifest.json")))
+                    .Select(Path.GetFileName)
+                    .OfType<string>()
+                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            );
+        }
+        DatasetNameComboBox.ItemsSource = datasets;
+        DatasetNameComboBox.Text = datasets.Contains(previous, StringComparer.OrdinalIgnoreCase)
+            ? previous
+            : datasets.FirstOrDefault() ?? (string.IsNullOrWhiteSpace(previous) ? "dataset_v1" : previous);
+    }
+
+    private void RefreshConversionModelChoices()
+    {
+        if (ConversionModelComboBox is null) return;
+        var previous = (ConversionModelComboBox.SelectedItem as ModelVersionChoice)?.Key;
+        var choices = new List<ModelVersionChoice>();
+        var modelsRoot = Path.Combine(GetProjectDir(), "models");
+        if (Directory.Exists(modelsRoot))
+        {
+            foreach (var manifestPath in Directory.EnumerateFiles(modelsRoot, "model_manifest.json", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    if (JsonNode.Parse(File.ReadAllText(manifestPath)) is not JsonObject manifest) continue;
+                    var modelId = manifest["model_id"]?.ToString();
+                    var modelVersion = manifest["model_version"]?.ToString();
+                    var bestPt = Path.Combine(Path.GetDirectoryName(manifestPath)!, "best.pt");
+                    if (!string.IsNullOrWhiteSpace(modelId) && !string.IsNullOrWhiteSpace(modelVersion) && File.Exists(bestPt))
+                    {
+                        choices.Add(new ModelVersionChoice(modelId, modelVersion));
+                    }
+                }
+                catch (JsonException)
+                {
+                    // Ignore invalid manifests; the backend will continue to validate selected models.
+                }
+            }
+        }
+
+        ConversionModelComboBox.ItemsSource = choices
+            .OrderBy(choice => choice.ModelId, StringComparer.OrdinalIgnoreCase)
+            .ThenByDescending(choice => choice.ModelVersion, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        ConversionModelComboBox.SelectedItem = choices.FirstOrDefault(choice => choice.Key == previous)
+            ?? ConversionModelComboBox.Items.Cast<ModelVersionChoice>().FirstOrDefault();
+    }
+
     private void BrowseDetectModelButton_Click(object sender, RoutedEventArgs e)
     {
         var projectModels = Path.Combine(GetProjectDir(), "models");
@@ -970,7 +1199,7 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog() == true) target.Text = dialog.FolderName;
     }
 
-    private void StartServerButton_Click(object sender, RoutedEventArgs e)
+    private async void StartServerButton_Click(object sender, RoutedEventArgs e)
     {
         if (_serverProcess is { HasExited: false }) { AppendLog("本地算法服务已在运行。"); return; }
         var root = GetPackageRoot();
@@ -1000,7 +1229,24 @@ public partial class MainWindow : Window
             _serverProcess.ErrorDataReceived += (_, args) => { if (!string.IsNullOrWhiteSpace(args.Data)) Dispatcher.Invoke(() => AppendLog("[server:error] " + args.Data)); };
             _serverProcess.BeginOutputReadLine();
             _serverProcess.BeginErrorReadLine();
-            AppendLog("本地算法服务已启动。");
+            AppendLog("本地算法服务进程已创建，正在确认端口监听……");
+            await Task.Delay(800);
+            if (_serverProcess.HasExited)
+            {
+                AppendLog($"本地算法服务启动失败，进程退出码: {_serverProcess.ExitCode}。请检查端口是否已被旧服务占用。");
+                _serverProcess.Dispose();
+                _serverProcess = null;
+                return;
+            }
+            var health = await SendCommandAsync(new { command = "health" });
+            if (HasCapability(health, "training_stop_after_epoch"))
+            {
+                AppendLog("新版本地算法服务已启动并通过能力检查。");
+            }
+            else
+            {
+                AppendLog("端口响应来自旧版算法服务，请关闭占用端口的旧进程后重试。");
+            }
         }
         catch (Exception ex) { AppendLog("启动服务失败: " + ex.Message); }
     }
@@ -1039,7 +1285,7 @@ public partial class MainWindow : Window
 
     private void SetBusy(bool busy)
     {
-        WorkflowTabs.IsEnabled = !busy;
+        WorkflowTabs.IsEnabled = !busy || _trainingActive;
         HealthButton.IsEnabled = !busy;
         StatusTextBlock.Text = busy ? "正在发送请求…" : StatusTextBlock.Text;
     }
@@ -1073,6 +1319,11 @@ public partial class MainWindow : Window
     ];
 
     private sealed record ClassDefinition(int id, string name, string display_name);
+    private sealed record ModelVersionChoice(string ModelId, string ModelVersion)
+    {
+        public string Key => $"{ModelId}/{ModelVersion}";
+        public override string ToString() => $"{ModelId} / {ModelVersion}";
+    }
     public sealed class WorkflowStepItem : INotifyPropertyChanged
     {
         private int _order;
@@ -1081,11 +1332,13 @@ public partial class MainWindow : Window
         private string _triggerType = "object_in_roi";
         private string _className = string.Empty;
         private string _roiId = string.Empty;
+        private string _eventType = string.Empty;
         private double _confidence = 0.25;
         private int _stableFrames = 3;
         private string _timeoutSec = string.Empty;
         private bool _required = true;
         private bool _allowHandPose;
+        private string _advancedTriggerJson = string.Empty;
 
         public int Order { get => _order; set => SetField(ref _order, value); }
         public string Id { get => _id; set => SetField(ref _id, value); }
@@ -1093,11 +1346,13 @@ public partial class MainWindow : Window
         public string TriggerType { get => _triggerType; set => SetField(ref _triggerType, value); }
         public string ClassName { get => _className; set => SetField(ref _className, value); }
         public string RoiId { get => _roiId; set => SetField(ref _roiId, value); }
+        public string EventType { get => _eventType; set => SetField(ref _eventType, value); }
         public double Confidence { get => _confidence; set => SetField(ref _confidence, value); }
         public int StableFrames { get => _stableFrames; set => SetField(ref _stableFrames, value); }
         public string TimeoutSec { get => _timeoutSec; set => SetField(ref _timeoutSec, value); }
         public bool Required { get => _required; set => SetField(ref _required, value); }
         public bool AllowHandPose { get => _allowHandPose; set => SetField(ref _allowHandPose, value); }
+        public string AdvancedTriggerJson { get => _advancedTriggerJson; set => SetField(ref _advancedTriggerJson, value); }
 
         public event PropertyChangedEventHandler? PropertyChanged;
 

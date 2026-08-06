@@ -1,3 +1,5 @@
+"""项目级模型训练、版本登记与模型清单生成。"""
+
 from __future__ import annotations
 
 import csv
@@ -69,25 +71,10 @@ def train_project_model(
         copy_best_to=best_model_path,
         exist_ok=False,
         log_dir=project.root / "outputs" / "logs",
-        export_torchscript=bool(options.get("export_torchscript", False)),
-        export_onnx=bool(options.get("export_onnx", False)),
-        export_engine=bool(options.get("export_engine", False)),
-        torchscript_output_path=model_dir / "best.torchscript",
-        onnx_output_path=model_dir / "best.onnx",
-        engine_output_path=model_dir / "best.engine",
-        export_imgsz=int(options.get("export_imgsz", options.get("imgsz", 640))),
-        export_opset=int(options.get("export_opset", 12)),
-        export_dynamic=bool(options.get("export_dynamic", False)),
-        export_simplify=bool(options.get("export_simplify", True)),
-        export_overwrite=False,
-        trtexec_path=str(options.get("trtexec_path", "trtexec")),
-        engine_fp16=bool(options.get("engine_fp16", True)),
-        engine_workspace_mb=options.get("engine_workspace_mb"),
-        engine_verbose=bool(options.get("engine_verbose", False)),
-        engine_dry_run=bool(options.get("engine_dry_run", False)),
-        torchscript_optimize=bool(options.get("torchscript_optimize", False)),
-        export_strict=bool(options.get("export_strict", False)),
-        export_python_path=options.get("export_python_path"),
+        training_control_dir=project.root / "outputs" / "training",
+        training_task_id=f"{model_id}_{version}",
+        training_model_id=model_id,
+        training_model_version=version,
         **augmentations,
     )
     model_manifest = register_project_model(
@@ -152,6 +139,11 @@ def register_project_model(
             "args_yaml": _relative_optional(training_result.get("args_yaml"), project.root),
             "log_path": _relative_optional(training_result.get("log_path"), project.root),
             "parameters": training_result.get("train_params", {}),
+            "status": "stopped" if training_result.get("stopped_by_user") else "completed",
+            "requested_epochs": training_result.get("requested_epochs"),
+            "completed_epochs": training_result.get("completed_epochs"),
+            "stopped_by_user": bool(training_result.get("stopped_by_user", False)),
+            "final_model_source": training_result.get("final_model_source"),
         },
         "validation_metrics": _read_final_metrics(results_csv),
         "export_errors": training_result.get("exported_models", {}).get("errors", []),
@@ -207,4 +199,3 @@ def _relative_optional(value: str | Path | None, root: Path) -> str | None:
         return _relative(path, root)
     except ValueError:
         return str(path.resolve())
-

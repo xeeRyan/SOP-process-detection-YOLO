@@ -6,7 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.config import DEFAULT_SOP_PROJECT_DIR, ROOT
+from scripts.config import ROOT
+from scripts.legacy_sk_config import DEFAULT_SOP_PROJECT_DIR
 from task_dispatcher import run_task
 from tools.project_frames import extract_project_videos
 
@@ -97,3 +98,39 @@ class AnnotationImportTests(unittest.TestCase):
 
             self.assertEqual(result["summary"]["empty_count"], 3)
             self.assertEqual(result["summary"]["missing_label_count"], 0)
+
+    def test_import_does_not_require_completed_workflow(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            project_dir, stems = self._prepare_project(root)
+            (project_dir / "workflow.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": "1.0",
+                        "workflow_id": "TEST_SOP_V1",
+                        "name": "待配置流程",
+                        "version": "1.0.0",
+                        "steps": [],
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            labels_dir = root / "external_labels"
+            labels_dir.mkdir()
+            (labels_dir / f"{stems[0]}.txt").write_text(
+                "0 0.500000 0.500000 0.200000 0.200000\n",
+                encoding="utf-8",
+            )
+
+            result = run_task(
+                {
+                    "command": "import_annotations",
+                    "params": {
+                        "sop_project_dir": str(project_dir),
+                        "labels_dir": str(labels_dir),
+                    },
+                }
+            )
+
+            self.assertEqual(result["summary"]["imported_count"], 1)

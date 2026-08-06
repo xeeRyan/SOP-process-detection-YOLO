@@ -56,25 +56,26 @@
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <Import Project="$(ProjectDir)SOPAID_wrapper.dependencies.props" />
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
   <ImportGroup Label="Shared">
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="..\SOPAIDC++\SopAidInfer.user.props" Condition="exists('..\SOPAIDC++\SopAidInfer.user.props')" />
+    <Import Project="$(SopAidNativeProjectDir)\SopAidInfer.user.props" Condition="exists('$(SopAidNativeProjectDir)\SopAidInfer.user.props')" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="..\SOPAIDC++\SopAidInfer.user.props" Condition="exists('..\SOPAIDC++\SopAidInfer.user.props')" />
+    <Import Project="$(SopAidNativeProjectDir)\SopAidInfer.user.props" Condition="exists('$(SopAidNativeProjectDir)\SopAidInfer.user.props')" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="..\SOPAIDC++\SopAidInfer.user.props" Condition="exists('..\SOPAIDC++\SopAidInfer.user.props')" />
+    <Import Project="$(SopAidNativeProjectDir)\SopAidInfer.user.props" Condition="exists('$(SopAidNativeProjectDir)\SopAidInfer.user.props')" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="..\SOPAIDC++\SopAidInfer.user.props" Condition="exists('..\SOPAIDC++\SopAidInfer.user.props')" />
+    <Import Project="$(SopAidNativeProjectDir)\SopAidInfer.user.props" Condition="exists('$(SopAidNativeProjectDir)\SopAidInfer.user.props')" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup />
@@ -84,15 +85,15 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <WarningLevel>Level3</WarningLevel>
       <PreprocessorDefinitions>NDEBUG;IServiceProvider=NativeIServiceProvider;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\SOPAIDC++\include;$(OpenCVIncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SopAidNativeProjectDir)\include;$(OpenCVIncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TrackFileAccess>false</TrackFileAccess>
     </ClCompile>
     <Link>
-      <AdditionalLibraryDirectories>..\SOPAIDC++\$(Platform)\$(Configuration);$(OpenCVLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SopAidNativeProjectDir)\$(Platform)\$(Configuration);$(OpenCVLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>SOPAID.lib;opencv_world$(OpenCVVersion).lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /Y /D "..\SOPAIDC++\$(Platform)\$(Configuration)\SOPAID.dll" "$(OutDir)"&#xD;&#xA;xcopy /Y /D "$(OpenCVRoot)\x64\vc16\bin\opencv_world$(OpenCVVersion).dll" "$(OutDir)"</Command>
+      <Command>xcopy /Y /D "$(SopAidNativeProjectDir)\$(Platform)\$(Configuration)\SOPAID.dll" "$(OutDir)"&#xD;&#xA;xcopy /Y /D "$(OpenCVRoot)\x64\vc16\bin\opencv_world$(OpenCVVersion).dll" "$(OutDir)"&#xD;&#xA;xcopy /Y /D "$(OnnxRuntimeLibDir)\onnxruntime.dll" "$(OutDir)"&#xD;&#xA;if exist "$(OnnxRuntimeLibDir)\onnxruntime_providers_shared.dll" xcopy /Y /D "$(OnnxRuntimeLibDir)\onnxruntime_providers_shared.dll" "$(OutDir)"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -101,11 +102,11 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <WarningLevel>Level3</WarningLevel>
       <PreprocessorDefinitions>WIN32;_DEBUG;IServiceProvider=NativeIServiceProvider;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\SOPAIDC++\include;$(OpenCVIncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SopAidNativeProjectDir)\include;$(OpenCVIncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TrackFileAccess>false</TrackFileAccess>
     </ClCompile>
     <Link>
-      <AdditionalLibraryDirectories>..\SOPAIDC++\$(Platform)\$(Configuration);$(OpenCVLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SopAidNativeProjectDir)\$(Platform)\$(Configuration);$(OpenCVLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>SOPAID.lib;opencv_world$(OpenCVVersion)d.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
@@ -115,15 +116,15 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <WarningLevel>Level3</WarningLevel>
       <PreprocessorDefinitions>_DEBUG;IServiceProvider=NativeIServiceProvider;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\SOPAIDC++\include;$(OpenCVIncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SopAidNativeProjectDir)\include;$(OpenCVIncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TrackFileAccess>false</TrackFileAccess>
     </ClCompile>
     <Link>
-      <AdditionalLibraryDirectories>..\SOPAIDC++\$(Platform)\$(Configuration);$(OpenCVLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SopAidNativeProjectDir)\$(Platform)\$(Configuration);$(OpenCVLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>SOPAID.lib;opencv_world$(OpenCVVersion)d.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy /Y /D "..\SOPAIDC++\$(Platform)\$(Configuration)\SOPAID.dll" "$(OutDir)"&#xD;&#xA;xcopy /Y /D "$(OpenCVRoot)\x64\vc16\bin\opencv_world$(OpenCVVersion)d.dll" "$(OutDir)"</Command>
+      <Command>xcopy /Y /D "$(SopAidNativeProjectDir)\$(Platform)\$(Configuration)\SOPAID.dll" "$(OutDir)"&#xD;&#xA;xcopy /Y /D "$(OpenCVRoot)\x64\vc16\bin\opencv_world$(OpenCVVersion)d.dll" "$(OutDir)"</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -132,11 +133,11 @@
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <WarningLevel>Level3</WarningLevel>
       <PreprocessorDefinitions>WIN32;NDEBUG;IServiceProvider=NativeIServiceProvider;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\SOPAIDC++\include;$(OpenCVIncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SopAidNativeProjectDir)\include;$(OpenCVIncludeDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <TrackFileAccess>false</TrackFileAccess>
     </ClCompile>
     <Link>
-      <AdditionalLibraryDirectories>..\SOPAIDC++\$(Platform)\$(Configuration);$(OpenCVLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SopAidNativeProjectDir)\$(Platform)\$(Configuration);$(OpenCVLibDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>SOPAID.lib;opencv_world$(OpenCVVersion).lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
@@ -160,6 +161,9 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="app.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="SOPAID_wrapper.dependencies.props" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="System" />

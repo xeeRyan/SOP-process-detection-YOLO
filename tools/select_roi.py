@@ -1,3 +1,5 @@
+"""交互式选择矩形ROI并输出配置。"""
+
 from __future__ import annotations
 
 import argparse

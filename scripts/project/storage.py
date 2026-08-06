@@ -1,3 +1,5 @@
+"""项目JSON的原子读写、安全路径解析和名称校验。"""
+
 from __future__ import annotations
 
 import json

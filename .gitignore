@@ -10,9 +10,15 @@ dist/
 
 # Virtual environments and local IDE settings
 .venv/
+.uv-cache/
+.test-tmp/
 .idea/
 .vscode/
 .vs/
+**/x64/
+*.user
+*.user.props
+!*.user.props.template
 cpp_sopaid_dll/SopAidInfer.user.props
 
 # C/C++ and Visual Studio build outputs
@@ -52,3 +58,7 @@ projects/*/annotation_import_report.json
 Thumbs.db
 *.tmp
 *.log
+*.rar
+*.lnk
+*.pt
+*.pth

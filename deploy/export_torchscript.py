@@ -1,3 +1,5 @@
+"""将Ultralytics训练checkpoint导出为TorchScript模型。"""
+
 from __future__ import annotations
 
 import argparse

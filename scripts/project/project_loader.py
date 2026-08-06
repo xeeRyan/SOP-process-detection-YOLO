@@ -1,3 +1,5 @@
+"""加载并规范化SOP项目配置，向运行流程提供项目对象。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

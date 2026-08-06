@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="SOPAIDWrapperDependencies">
+    <!-- Override these values in SOPAIDC++\SopAidInfer.user.props when dependencies live elsewhere. -->
+    <SopAidNativeProjectDir Condition="'$(SopAidNativeProjectDir)'==''">$(ProjectDir)..\SOPAIDC++</SopAidNativeProjectDir>
+    <OpenCVRoot Condition="'$(OpenCVRoot)'=='' and Exists('E:\software\opencv\build\include\opencv2\core.hpp')">E:\software\opencv\build</OpenCVRoot>
+    <OpenCVVersion Condition="'$(OpenCVVersion)'==''">4130</OpenCVVersion>
+    <OpenCVIncludeDir Condition="'$(OpenCVIncludeDir)'==''">$(OpenCVRoot)\include</OpenCVIncludeDir>
+    <OpenCVLibDir Condition="'$(OpenCVLibDir)'==''">$(OpenCVRoot)\x64\vc16\lib</OpenCVLibDir>
+    <OnnxRuntimeRoot Condition="'$(OnnxRuntimeRoot)'=='' and Exists('E:\software\onnxruntime-gpu-windows-1.19.2')">E:\software\onnxruntime-gpu-windows-1.19.2</OnnxRuntimeRoot>
+    <OnnxRuntimeLibDir Condition="'$(OnnxRuntimeLibDir)'==''">$(OnnxRuntimeRoot)\runtimes\win-x64\native</OnnxRuntimeLibDir>
+  </PropertyGroup>
+</Project>

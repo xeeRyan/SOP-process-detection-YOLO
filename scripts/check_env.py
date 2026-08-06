@@ -1,3 +1,5 @@
+"""检查运行依赖、默认模型和示例输入是否齐备。"""
+
 from __future__ import annotations
 
 import importlib
@@ -8,7 +10,8 @@ from pathlib import Path
 if __package__ is None or __package__ == "":
     sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from scripts.config import DEFAULT_HAND_POSE_MODEL_PATH, DEFAULT_MODEL_PATH, DEFAULT_VIDEO_PATH
+from scripts.config import DEFAULT_HAND_POSE_MODEL_PATH
+from scripts.legacy_sk_config import DEFAULT_MODEL_PATH, DEFAULT_VIDEO_PATH
 
 
 # 环境自检项：交付 demo 前确认模型、视频和关键依赖是否齐全。

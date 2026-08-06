@@ -1,3 +1,5 @@
+"""SOP项目的创建、读取、修改、激活和完整性检查。"""
+
 from __future__ import annotations
 
 from pathlib import Path

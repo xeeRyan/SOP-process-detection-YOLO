@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from scripts.main_video import _build_temporary_video_path
+from scripts.main_video import _build_temporary_video_path, _should_run_hand_pose
 
 
 class VideoOutputPathTests(unittest.TestCase):
@@ -17,3 +17,10 @@ class VideoOutputPathTests(unittest.TestCase):
         self.assertEqual(first.parent, result.parent)
         self.assertEqual(first.suffix, ".mp4")
         self.assertIn(".inprogress", first.name)
+
+    def test_hand_pose_inference_interval_is_applied(self) -> None:
+        sampled = [frame for frame in range(10) if _should_run_hand_pose(frame, 3)]
+
+        self.assertEqual(sampled, [0, 3, 6, 9])
+        with self.assertRaises(ValueError):
+            _should_run_hand_pose(0, 0)

@@ -1,9 +1,11 @@
+"""导入并校验外部YOLO标注文件。"""
+
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
 
-from scripts.project import load_sop_project
+from scripts.project.schema_validator import validate_project
 from scripts.project.storage import read_json_object, resolve_within, utc_now, write_json_atomic, write_text_atomic
 from scripts.utils import ensure_dir
 
@@ -17,17 +19,24 @@ def import_yolo_annotations(
 ) -> dict[str, Any]:
     """将外部工具生成的 YOLO txt 标签导入 SOP 项目。"""
 
-    project = load_sop_project(project_dir)
+    # 标注导入属于数据准备阶段，不应要求 ROI 和 workflow 已经配置完成。
+    # 完整项目校验留给工作流保存、项目激活和检测阶段。
+    project_root = Path(project_dir).expanduser().resolve()
+    project_data = read_json_object(
+        project_root / "project.json",
+        description="项目配置文件",
+    )
+    validate_project(project_data)
     labels_root = Path(labels_dir).expanduser().resolve()
     if not labels_root.is_dir():
         raise FileNotFoundError(f"未找到外部标签目录: {labels_root}")
 
-    manifest_path = project.root / "frames_manifest.json"
+    manifest_path = project_root / "frames_manifest.json"
     manifest = _read_manifest(manifest_path)
     frames_by_stem = _index_manifest_frames(manifest)
     label_files = sorted(labels_root.rglob("*.txt"))
     labels_by_stem = _index_label_files(label_files)
-    class_count = len(project.project["classes"])
+    class_count = len(project_data["classes"])
 
     imported: list[dict[str, Any]] = []
     invalid: list[dict[str, Any]] = []
@@ -51,7 +60,7 @@ def import_yolo_annotations(
             continue
         if not candidates:
             if mark_missing_as_empty:
-                target = resolve_within(project.root, frame_record["annotation_path"], field="annotation_path")
+                target = resolve_within(project_root, frame_record["annotation_path"], field="annotation_path")
                 if target.exists() and not overwrite:
                     skipped_existing.append({"image_stem": stem, "annotation_path": str(target)})
                 else:
@@ -85,7 +94,7 @@ def import_yolo_annotations(
             )
             continue
 
-        target = resolve_within(project.root, frame_record["annotation_path"], field="annotation_path")
+        target = resolve_within(project_root, frame_record["annotation_path"], field="annotation_path")
         if target.exists() and not overwrite:
             skipped_existing.append({"image_stem": stem, "annotation_path": str(target)})
             continue
@@ -112,8 +121,8 @@ def import_yolo_annotations(
     write_json_atomic(manifest_path, manifest)
     report = {
         "schema_version": "1.0",
-        "project_id": project.project_id,
-        "project_dir": str(project.root),
+        "project_id": str(project_data["project_id"]),
+        "project_dir": str(project_root),
         "labels_dir": str(labels_root),
         "imported_at": utc_now(),
         "settings": {
@@ -139,7 +148,7 @@ def import_yolo_annotations(
         "duplicate_labels": duplicate_labels,
         "skipped_existing": skipped_existing,
     }
-    report_path = project.root / "annotation_import_report.json"
+    report_path = project_root / "annotation_import_report.json"
     report["report_path"] = str(report_path)
     report["manifest_path"] = str(manifest_path)
     write_json_atomic(report_path, report)

@@ -1,6 +1,7 @@
+"""检测流程共享的通用辅助函数。"""
+
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Iterable, Sequence
 
@@ -35,21 +36,6 @@ def ensure_dir(path: Path) -> Path:
 
     path.mkdir(parents=True, exist_ok=True)
     return path
-
-
-# 文件工具：写出接口 JSON。
-def write_json(path: Path, data: dict) -> None:
-    """将接口结果写入 UTF-8 JSON 文件。"""
-
-    ensure_dir(path.parent)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-# 路径工具：解析外部传入路径。
-def normalize_path(path: str | Path) -> Path:
-    """展开并解析路径，供外部传参时使用。"""
-
-    return Path(path).expanduser().resolve()
 
 
 # SOP 工具：获取某个 ROI 内出现过的类别集合。

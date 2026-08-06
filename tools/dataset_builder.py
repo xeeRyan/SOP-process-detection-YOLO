@@ -1,3 +1,5 @@
+"""从项目帧和标注构建可复现的YOLO训练数据集。"""
+
 from __future__ import annotations
 
 import json
@@ -26,6 +28,7 @@ def build_yolo_dataset(
     seed: int = 42,
     require_all_annotated: bool = True,
     require_all_splits: bool = True,
+    allow_single_video_frame_split: bool = False,
 ) -> dict[str, Any]:
     """按视频分组构建无相邻帧泄漏的 YOLO 数据集。"""
 
@@ -42,10 +45,19 @@ def build_yolo_dataset(
         )
 
     active_splits = [name for name, ratio in zip(SPLIT_NAMES, ratios) if ratio > 0]
+    grouping = "video_id"
+    leakage_warning = None
     if require_all_splits and len(groups) < len(active_splits):
-        raise ValueError(
-            f"当前只有 {len(groups)} 个已标注视频，无法生成 {len(active_splits)} 个互斥集合；"
-            "请增加独立视频，或将不需要集合的比例设为 0"
+        if not allow_single_video_frame_split:
+            raise ValueError(
+                f"当前只有 {len(groups)} 个已标注独立视频，无法生成 {len(active_splits)} 个互斥集合；"
+                "请增加独立视频，或仅在烟雾测试时显式开启 allow_single_video_frame_split"
+            )
+        groups = _expand_to_frame_groups(groups)
+        grouping = "frame_smoke_test"
+        leakage_warning = (
+            "同一来源视频的帧被划分到不同集合，仅用于验证训练链路，"
+            "指标不能用于正式检出率评估"
         )
 
     assignments = _assign_video_groups(groups, ratios, seed, require_all_splits)
@@ -94,12 +106,12 @@ def build_yolo_dataset(
                 if line.strip():
                     class_counts[class_names[int(line.split()[0])]] += 1
         summary[split] = {
-            "video_count": len(assignments[split]),
+            "video_count": len({group["video_id"] for group in assignments[split]}),
             "frame_count": len(split_records),
             "positive_frame_count": sum(record["annotation_status"] == "labeled" for record in split_records),
             "empty_frame_count": sum(record["annotation_status"] == "reviewed_empty" for record in split_records),
             "class_counts": class_counts,
-            "video_ids": [group["video_id"] for group in assignments[split]],
+            "video_ids": sorted({group["video_id"] for group in assignments[split]}),
         }
     dataset_manifest = {
         "schema_version": "1.0",
@@ -108,7 +120,8 @@ def build_yolo_dataset(
         "created_at": utc_now(),
         "seed": seed,
         "split_ratios": dict(zip(SPLIT_NAMES, ratios)),
-        "grouping": "video_id",
+        "grouping": grouping,
+        "leakage_warning": leakage_warning,
         "summary": summary,
         "excluded_frames": excluded,
         "records": records,
@@ -123,7 +136,20 @@ def build_yolo_dataset(
         "dataset_manifest": str(dataset_manifest_path),
         "summary": summary,
         "excluded_frame_count": len(excluded),
+        "leakage_warning": leakage_warning,
     }
+
+
+def _expand_to_frame_groups(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "video_id": group["video_id"],
+            "assignment_id": f"{group['video_id']}:{frame.get('frame_id')}",
+            "frames": [frame],
+        }
+        for group in groups
+        for frame in group["frames"]
+    ]
 
 
 def _collect_video_groups(project_root: Path, manifest: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:

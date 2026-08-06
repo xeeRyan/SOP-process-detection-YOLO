@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.config import DEFAULT_SOP_PROJECT_DIR
+from scripts.legacy_sk_config import DEFAULT_SOP_PROJECT_DIR
 from task_dispatcher import run_task
 
 
@@ -100,3 +100,28 @@ class DatasetBuilderTests(unittest.TestCase):
                         "params": {"sop_project_dir": str(project_dir), "dataset_name": "dataset_v1"},
                     }
                 )
+
+    def test_explicit_smoke_mode_can_split_frames_from_one_video(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project_dir = self._create_project(Path(temp_dir), video_count=1)
+            result = run_task(
+                {
+                    "command": "build_dataset",
+                    "params": {
+                        "sop_project_dir": str(project_dir),
+                        "dataset_name": "smoke_v1",
+                        "train_ratio": 0.5,
+                        "val_ratio": 0.5,
+                        "test_ratio": 0.0,
+                        "allow_single_video_frame_split": True,
+                    },
+                }
+            )
+
+            manifest = json.loads(
+                Path(result["dataset_manifest"]).read_text(encoding="utf-8")
+            )
+            self.assertEqual(manifest["grouping"], "frame_smoke_test")
+            self.assertIn("不能用于正式检出率评估", manifest["leakage_warning"])
+            self.assertEqual(result["summary"]["train"]["frame_count"], 1)
+            self.assertEqual(result["summary"]["val"]["frame_count"], 1)

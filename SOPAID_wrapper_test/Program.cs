@@ -16,33 +16,36 @@ namespace SOPAID_wrapper_test
             {
                 Console.WriteLine();
                 Console.WriteLine("Usage:");
-                Console.WriteLine("  SOPAID_wrapper_test.exe <model-path>");
+                Console.WriteLine("  SOPAID_wrapper_test.exe <model-path-or-project-directory>");
                 Console.WriteLine();
                 Console.WriteLine("Wrapper load test passed. Provide a model path to test native Init().");
                 return 0;
             }
 
-            string modelPath = args[0];
-            if (!File.Exists(modelPath))
+            string inputPath = args[0];
+            bool projectMode = Directory.Exists(inputPath);
+            if (!projectMode && !File.Exists(inputPath))
             {
-                Console.WriteLine("Model file not found: " + modelPath);
+                Console.WriteLine("Model or project directory not found: " + inputPath);
                 return 2;
             }
 
-            var config = new InferenceConfig
-            {
-                ModelPath = modelPath,
-                Format = ModelFormat.Auto,
-                InputWidth = 640,
-                InputHeight = 640,
-                ConfidenceThreshold = 0.25f,
-                NmsThreshold = 0.70f,
-                ClassNamesCsv = "bearing,cover,tool",
-                UseCuda = false,
-                DeviceId = 0
-            };
+            InferenceEvaluator evaluator = projectMode
+                ? new InferenceEvaluator(new ProjectInferenceConfig
+                  {
+                      ProjectDirectory = inputPath,
+                      PreferredFormat = ModelFormat.Auto,
+                      UseCuda = false
+                  })
+                : new InferenceEvaluator(new InferenceConfig
+                  {
+                      ModelPath = inputPath,
+                      Format = ModelFormat.Auto,
+                      ClassNamesCsv = "bearing,cover,tool",
+                      UseCuda = false
+                  });
 
-            using (var evaluator = new InferenceEvaluator(config))
+            using (evaluator)
             {
                 Console.WriteLine("Init result: " + evaluator.IsInitialized);
                 Console.WriteLine("Status: " + evaluator.LastError.Status);
@@ -57,6 +60,17 @@ namespace SOPAID_wrapper_test
                     return 3;
                 }
 
+                ModelInfo modelInfo = evaluator.GetModelInfo();
+                if (modelInfo == null)
+                {
+                    Console.WriteLine("GetModelInfo failed: " + evaluator.LastError.Message);
+                    return 4;
+                }
+                Console.WriteLine("Project: " + modelInfo.ProjectId);
+                Console.WriteLine("Model: " + modelInfo.ModelId + " " + modelInfo.ModelVersion);
+                Console.WriteLine("Backend: " + modelInfo.Backend);
+                Console.WriteLine("Classes: " + modelInfo.ClassCount);
+
                 var results = new List<DetectionResult>();
                 byte[] dummyImage = new byte[640 * 480 * 3];
 
@@ -70,7 +84,11 @@ namespace SOPAID_wrapper_test
                 }
 
                 Console.WriteLine("Detection count: " + results.Count);
-                return ok ? 0 : 4;
+                var channelResults = new List<DetectionResult>();
+                bool grayOk = evaluator.Evaluate(new byte[320 * 240], 320, 240, 1, channelResults);
+                bool bgraOk = evaluator.Evaluate(new byte[320 * 240 * 4], 320, 240, 4, channelResults);
+                Console.WriteLine("Gray/BGRA conversion: " + grayOk + "/" + bgraOk);
+                return ok && grayOk && bgraOk ? 0 : 5;
             }
         }
     }

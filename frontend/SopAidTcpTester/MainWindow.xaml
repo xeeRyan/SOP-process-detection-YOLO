@@ -251,11 +251,16 @@
                                                 <DataGridTemplateColumn.CellTemplate><DataTemplate><TextBlock Text="{Binding RoiId}" /></DataTemplate></DataGridTemplateColumn.CellTemplate>
                                                 <DataGridTemplateColumn.CellEditingTemplate><DataTemplate><ComboBox ItemsSource="{Binding DataContext.AvailableRoiIds, RelativeSource={RelativeSource AncestorType=Window}}" SelectedItem="{Binding RoiId, UpdateSourceTrigger=PropertyChanged}" /></DataTemplate></DataGridTemplateColumn.CellEditingTemplate>
                                             </DataGridTemplateColumn>
+                                            <DataGridTemplateColumn Header="对象事件" Width="115">
+                                                <DataGridTemplateColumn.CellTemplate><DataTemplate><TextBlock Text="{Binding EventType}" /></DataTemplate></DataGridTemplateColumn.CellTemplate>
+                                                <DataGridTemplateColumn.CellEditingTemplate><DataTemplate><ComboBox ItemsSource="{Binding DataContext.EventTypes, RelativeSource={RelativeSource AncestorType=Window}}" SelectedItem="{Binding EventType, UpdateSourceTrigger=PropertyChanged}" /></DataTemplate></DataGridTemplateColumn.CellEditingTemplate>
+                                            </DataGridTemplateColumn>
                                             <DataGridTextColumn Header="置信度" Binding="{Binding Confidence, UpdateSourceTrigger=PropertyChanged}" Width="65" />
                                             <DataGridTextColumn Header="稳定帧" Binding="{Binding StableFrames, UpdateSourceTrigger=PropertyChanged}" Width="60" />
                                             <DataGridTextColumn Header="超时(s)" Binding="{Binding TimeoutSec, UpdateSourceTrigger=PropertyChanged}" Width="62" />
                                             <DataGridCheckBoxColumn Header="必需" Binding="{Binding Required}" Width="45" />
                                             <DataGridCheckBoxColumn Header="允许手势" Binding="{Binding AllowHandPose}" Width="65" />
+                                            <DataGridTextColumn Header="高级触发 JSON" Binding="{Binding AdvancedTriggerJson, UpdateSourceTrigger=PropertyChanged}" Width="260" />
                                         </DataGrid.Columns>
                                     </DataGrid>
                                     <Expander Grid.Row="2" Header="高级：workflow.json" Margin="0,6,0,0">
@@ -278,7 +283,7 @@
                             <StackPanel Margin="20">
                                 <TextBlock Text="数据集构建" Style="{StaticResource SectionTitle}" />
                                 <WrapPanel>
-                                    <StackPanel Width="190" Margin="0,0,12,0"><TextBlock Text="数据集名称" Style="{StaticResource FieldLabel}" /><TextBox x:Name="DatasetNameTextBox" Text="dataset_v1" /></StackPanel>
+                                    <StackPanel Width="240" Margin="0,0,12,0"><TextBlock Text="数据集名称" Style="{StaticResource FieldLabel}" /><ComboBox x:Name="DatasetNameComboBox" IsEditable="True" /></StackPanel>
                                     <StackPanel Width="110" Margin="0,0,12,0"><TextBlock Text="训练比例" Style="{StaticResource FieldLabel}" /><TextBox x:Name="TrainRatioTextBox" Text="0.7" /></StackPanel>
                                     <StackPanel Width="110" Margin="0,0,12,0"><TextBlock Text="验证比例" Style="{StaticResource FieldLabel}" /><TextBox x:Name="ValRatioTextBox" Text="0.2" /></StackPanel>
                                     <StackPanel Width="110"><TextBlock Text="测试比例" Style="{StaticResource FieldLabel}" /><TextBox x:Name="TestRatioTextBox" Text="0.1" /></StackPanel>
@@ -322,32 +327,31 @@
                                         <StackPanel Width="105" Margin="0,0,8,8"><TextBlock Text="copy_paste" /><TextBox x:Name="CopyPasteTextBox" /></StackPanel>
                                     </WrapPanel>
                                 </Expander>
-                                <Expander Header="模型导出参数" Margin="0,8,0,0">
-                                    <StackPanel Margin="8">
-                                        <WrapPanel>
-                                            <CheckBox x:Name="ExportTorchScriptCheckBox" Content="TorchScript" IsChecked="True" Margin="0,0,16,8" />
-                                            <CheckBox x:Name="ExportOnnxCheckBox" Content="ONNX" IsChecked="True" Margin="0,0,16,8" />
-                                            <CheckBox x:Name="ExportEngineCheckBox" Content="TensorRT Engine" Margin="0,0,16,8" />
-                                            <CheckBox x:Name="ExportDynamicCheckBox" Content="Dynamic Shape" Margin="0,0,16,8" />
-                                            <CheckBox x:Name="ExportSimplifyCheckBox" Content="Simplify ONNX" IsChecked="True" Margin="0,0,16,8" />
-                                            <CheckBox x:Name="TorchScriptOptimizeCheckBox" Content="优化 TorchScript" Margin="0,0,16,8" />
-                                            <CheckBox x:Name="ExportStrictCheckBox" Content="导出失败则训练失败" Margin="0,0,0,8" />
-                                        </WrapPanel>
-                                        <WrapPanel>
-                                            <StackPanel Width="120" Margin="0,0,10,8"><TextBlock Text="Export Image Size" /><TextBox x:Name="ExportImageSizeTextBox" Text="640" /></StackPanel>
-                                            <StackPanel Width="100" Margin="0,0,10,8"><TextBlock Text="ONNX Opset" /><TextBox x:Name="ExportOpsetTextBox" Text="12" /></StackPanel>
-                                            <StackPanel Width="190" Margin="0,0,10,8"><TextBlock Text="trtexec 路径" /><TextBox x:Name="TrtExecPathTextBox" Text="trtexec" /></StackPanel>
-                                            <StackPanel Width="130" Margin="0,0,10,8"><TextBlock Text="Engine Workspace MB" /><TextBox x:Name="EngineWorkspaceTextBox" /></StackPanel>
-                                        </WrapPanel>
-                                        <WrapPanel>
-                                            <CheckBox x:Name="EngineFp16CheckBox" Content="Engine FP16" IsChecked="True" Margin="0,0,16,8" />
-                                            <CheckBox x:Name="EngineVerboseCheckBox" Content="Engine Verbose" Margin="0,0,16,8" />
-                                            <CheckBox x:Name="EngineDryRunCheckBox" Content="Engine Dry Run" Margin="0,0,16,8" />
-                                            <StackPanel Width="260"><TextBlock Text="导出 Python 路径（可留空）" /><TextBox x:Name="ExportPythonPathTextBox" /></StackPanel>
-                                        </WrapPanel>
+                                <WrapPanel Margin="0,12,0,0">
+                                    <Button x:Name="TrainProjectButton" Content="启动项目训练" Style="{StaticResource PrimaryButton}" Click="TrainProjectButton_Click" />
+                                    <Button x:Name="StopTrainingButton" Content="完成当前轮后停止" IsEnabled="False" Margin="10,0,0,0" Click="StopTrainingButton_Click" />
+                                </WrapPanel>
+                                <StackPanel Margin="0,10,0,0">
+                                    <TextBlock x:Name="TrainingProgressText" Text="尚未开始训练" Style="{StaticResource FieldLabel}" />
+                                    <ProgressBar x:Name="TrainingProgressBar" Height="16" Minimum="0" Maximum="100" Value="0" />
+                                </StackPanel>
+                                <Separator Margin="0,18" />
+                                <TextBlock Text="训练后模型转换" Style="{StaticResource SectionTitle}" />
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                                        <TextBlock Text="选择已训练模型" Style="{StaticResource FieldLabel}" />
+                                        <ComboBox x:Name="ConversionModelComboBox" MinWidth="360" />
                                     </StackPanel>
-                                </Expander>
-                                <Button x:Name="TrainProjectButton" Content="启动项目训练" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Margin="0,12,0,0" Click="TrainProjectButton_Click" />
+                                    <Button Grid.Column="1" Content="刷新模型" VerticalAlignment="Bottom" Click="RefreshConversionModelsButton_Click" />
+                                </Grid>
+                                <WrapPanel Margin="0,12,0,0">
+                                    <CheckBox x:Name="ExportTorchScriptCheckBox" Content="TorchScript" IsChecked="True" Margin="0,0,16,8" />
+                                    <CheckBox x:Name="ExportOnnxCheckBox" Content="ONNX" IsChecked="True" Margin="0,0,16,8" />
+                                    <CheckBox x:Name="ExportEngineCheckBox" Content="TensorRT Engine" Margin="0,0,16,8" />
+                                    <CheckBox x:Name="ConversionOverwriteCheckBox" Content="覆盖已有转换文件" Margin="8,0,0,8" />
+                                </WrapPanel>
+                                <Button x:Name="ConvertProjectModelButton" Content="转换所选模型格式" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left" Margin="0,12,0,0" Click="ConvertProjectModelButton_Click" />
                             </StackPanel>
                         </ScrollViewer>
                     </TabItem>
@@ -371,7 +375,7 @@
                                     <StackPanel Width="130" Margin="0,0,12,0"><TextBlock Text="置信度" Style="{StaticResource FieldLabel}" /><TextBox x:Name="ConfidenceTextBox" Text="0.25" /></StackPanel>
                                     <StackPanel Width="130" Margin="0,0,12,0"><TextBlock Text="NMS 阈值" Style="{StaticResource FieldLabel}" /><TextBox x:Name="NmsThresholdTextBox" Text="0.7" /></StackPanel>
                                     <StackPanel Width="130" Margin="0,0,12,0"><TextBlock Text="推理设备" Style="{StaticResource FieldLabel}" /><ComboBox x:Name="InferenceDeviceComboBox" SelectedIndex="0"><ComboBoxItem Content="auto" /><ComboBoxItem Content="cpu" /><ComboBoxItem Content="0" /></ComboBox></StackPanel>
-                                    <StackPanel Width="160" Margin="0,0,12,0"><TextBlock Text="手部采样间隔（帧）" Style="{StaticResource FieldLabel}" /><TextBox x:Name="HandPoseIntervalTextBox" Text="30" /></StackPanel>
+                                    <StackPanel Width="160" Margin="0,0,12,0"><TextBlock Text="手部推理间隔（帧）" Style="{StaticResource FieldLabel}" /><TextBox x:Name="HandPoseIntervalTextBox" Text="1" ToolTip="设为 1 时逐帧运行手部模型" /></StackPanel>
                                     <CheckBox x:Name="EnableYoloCheckBox" Content="启用 YOLO" IsChecked="True" VerticalAlignment="Bottom" Margin="0,0,16,8" />
                                     <CheckBox x:Name="EnableHandPoseCheckBox" Content="启用手部关键点" IsChecked="True" VerticalAlignment="Bottom" Margin="0,0,16,8" />
                                     <CheckBox x:Name="OutputVideoCheckBox" Content="输出结果视频" IsChecked="True" VerticalAlignment="Bottom" Margin="0,0,16,8" />
@@ -386,6 +390,26 @@
                                     <StackPanel Margin="8">
                                         <TextBlock Text="步骤启用状态，例如 { &quot;step_001&quot;: true }" />
                                         <TextBox x:Name="StepEnabledJsonTextBox" AcceptsReturn="True" Height="54" FontFamily="Consolas" />
+                                        <WrapPanel Margin="0,10,0,0">
+                                            <StackPanel Width="160" Margin="0,0,12,0">
+                                                <TextBlock Text="推理接口" />
+                                                <ComboBox x:Name="InferenceBackendComboBox" SelectedIndex="0">
+                                                    <ComboBoxItem Content="python" />
+                                                </ComboBox>
+                                            </StackPanel>
+                                            <StackPanel Width="150" Margin="0,0,12,0">
+                                                <TextBlock Text="跟踪 IoU 阈值" />
+                                                <TextBox x:Name="TrackingIouTextBox" Text="0.2" />
+                                            </StackPanel>
+                                            <StackPanel Width="170" Margin="0,0,12,0">
+                                                <TextBlock Text="跟踪最大丢失帧" />
+                                                <TextBox x:Name="TrackingMissingTextBox" Text="8" />
+                                            </StackPanel>
+                                            <StackPanel Width="180">
+                                                <TextBlock Text="事件丢失容忍帧" />
+                                                <TextBox x:Name="EventLostToleranceTextBox" Text="8" ToolTip="连续漏检超过此帧数后才产生离开和消失事件" />
+                                            </StackPanel>
+                                        </WrapPanel>
                                         <TextBlock Text="触发来源，例如 { &quot;step_001&quot;: &quot;yolo&quot; }" Margin="0,8,0,0" />
                                         <TextBox x:Name="TriggerSourcesJsonTextBox" AcceptsReturn="True" Height="54" FontFamily="Consolas" />
                                         <TextBlock Text="步骤超时秒数，例如 { &quot;step_001&quot;: 30 }" Margin="0,8,0,0" />

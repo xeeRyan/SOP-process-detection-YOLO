@@ -1,3 +1,5 @@
+"""项目视频导入、抽帧和帧清单维护。"""
+
 from __future__ import annotations
 
 import hashlib

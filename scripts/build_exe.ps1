@@ -14,4 +14,17 @@ if (-not (Test-Path $exePath)) {
     throw "Packaging completed without producing $exePath"
 }
 
+$requiredRuntimePaths = @(
+    "dist\SOP_PYD\_internal",
+    "dist\SOP_PYD\config\app_config.json",
+    "dist\SOP_PYD\models\hand_landmarker.task",
+    "dist\SOP_PYD\projects"
+)
+foreach ($relativePath in $requiredRuntimePaths) {
+    $requiredPath = Join-Path $projectRoot $relativePath
+    if (-not (Test-Path $requiredPath)) {
+        throw "Packaging completed without required runtime asset: $requiredPath"
+    }
+}
+
 Write-Host "Package ready: $exePath"

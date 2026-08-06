@@ -64,6 +64,8 @@ public:
         }
     }
 
+    const char* backendName() const override { return "onnxruntime"; }
+
     SopAidStatus evaluate(const cv::Mat& image, std::vector<SopAidDetection>& results, SopAidError* error) override {
         results.clear();
         if (image.empty()) {

@@ -1,3 +1,5 @@
+"""视频帧预处理与尺寸、颜色空间转换。"""
+
 from __future__ import annotations
 
 from typing import Any

@@ -1,6 +1,7 @@
 ﻿# -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
+import shutil
 
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_dynamic_libs, collect_submodules
 
@@ -15,14 +16,21 @@ def add_dir(path: str, target: str):
     return []
 
 
-project_datas = []
-project_datas += add_dir('config', 'config')
-project_datas += add_dir('models', 'models')
-project_datas += add_dir('datasets', 'datasets')
-project_datas += add_dir('videos', 'videos')
-project_datas += add_dir('docs', 'docs')
-project_datas += add_dir('deploy', 'deploy')
-project_datas += add_dir('projects/SK_DEMO', 'projects/SK_DEMO')
+# 只读文档/部署辅助文件可以放在 PyInstaller 的 _internal 中。
+# config、models、projects 等运行时资产必须位于 SOP_PYD.exe 同级目录：
+# task_dispatcher 在 frozen 模式下以 sys.executable.parent 作为 APP_ROOT，
+# 且项目创建、训练、检测输出都要求这些目录可写。
+embedded_datas = []
+embedded_datas += add_dir('docs', 'docs')
+embedded_datas += add_dir('deploy', 'deploy')
+
+runtime_asset_dirs = (
+    'config',
+    'models',
+    'projects',
+    'datasets',
+    'videos',
+)
 
 # Collect package resources used by runtime imports and model export.
 package_datas = []
@@ -64,7 +72,7 @@ a = Analysis(
     ['SOP_PYD.py'],
     pathex=[str(ROOT)],
     binaries=package_binaries,
-    datas=project_datas + package_datas,
+    datas=embedded_datas + package_datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
@@ -106,5 +114,44 @@ coll = COLLECT(
     upx_exclude=[],
     name='SOP_PYD',
 )
+
+
+def copy_runtime_asset(source_name: str) -> None:
+    """将运行时资产同步到 EXE 同级目录，避免被放入 _internal。"""
+
+    source = ROOT / source_name
+    if not source.exists():
+        return
+    target = ROOT / 'dist' / 'SOP_PYD' / source_name
+    if target.exists():
+        if target.is_dir():
+            shutil.rmtree(target)
+        else:
+            target.unlink()
+    if source.is_dir():
+        def ignore_runtime_residue(directory: str, names: list[str]) -> set[str]:
+            ignored = {
+                name
+                for name in names
+                if name in {'__pycache__', 'outputs', 'runs'}
+                or name.endswith(('.pyc', '.pyo', '.tmp', '.temp'))
+                or '.inprogress.' in name
+            }
+            # 全局 outputs/runs 由下方创建空目录；项目下的 outputs/runs
+            # 也是历史运行产物，不应进入交付包。
+            return ignored
+
+        shutil.copytree(source, target, ignore=ignore_runtime_residue)
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+
+
+for runtime_asset in runtime_asset_dirs:
+    copy_runtime_asset(runtime_asset)
+
+# 运行输出不从源码目录复制，交付包内只创建干净的可写目录。
+for writable_dir in ('outputs', 'runs'):
+    (ROOT / 'dist' / 'SOP_PYD' / writable_dir).mkdir(parents=True, exist_ok=True)
 
 
