@@ -1,3 +1,5 @@
+"""MediaPipe手部关键点检测及结果序列化。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

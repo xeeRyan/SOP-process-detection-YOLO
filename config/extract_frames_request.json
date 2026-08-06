@@ -1,0 +1,13 @@
+{
+  "command": "extract_frames",
+  "params": {
+    "sop_project_dir": "projects/SK_DEMO",
+    "video_paths": [
+      "videos/sk.mp4"
+    ],
+    "frames_per_second": 2.0,
+    "max_frames_per_video": 300,
+    "copy_videos": true,
+    "jpeg_quality": 95
+  }
+}

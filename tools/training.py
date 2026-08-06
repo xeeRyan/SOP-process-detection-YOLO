@@ -1,4 +1,10 @@
-﻿from __future__ import annotations
+"""YOLO训练执行器和部署格式导出的底层公共实现。
+
+训练入口只生成PyTorch checkpoint；项目模型转换模块显式调用导出函数，
+以兼容源码运行环境和PyInstaller运行环境。
+"""
+
+from __future__ import annotations
 
 import os
 import shutil
@@ -12,6 +18,7 @@ from scripts.runtime_logging import close_operation_logger, create_operation_log
 from deploy.export_onnx import export_onnx as export_onnx_model
 from deploy.export_tensorrt import export_tensorrt as export_tensorrt_model
 from deploy.export_torchscript import export_torchscript as export_torchscript_model
+from tools.training_control import initialize_training_control, stop_requested, write_training_status
 
 
 DEFAULT_BASE_MODEL_PATH = ROOT / "models" / "yolo26s.pt"
@@ -20,7 +27,7 @@ DEFAULT_TRAIN_PROJECT = ROOT / "runs"
 DEFAULT_TRAIN_NAME = "sop_yolo26s"
 DEFAULT_BEST_MODEL_PATH = ROOT / "models" / "best_yolo26s.pt"
 
-# 绗竴鐗堝紑鏀剧粰杞欢绔殑 YOLO 璁粌澧炲己鍙傛暟銆?
+# 第一版开放给软件端的 YOLO 训练增强参数。
 AUGMENTATION_PARAM_NAMES = (
     "hsv_h",
     "hsv_s",
@@ -56,32 +63,16 @@ def train_yolo_model(
     copy_best_to: str | Path | None = DEFAULT_BEST_MODEL_PATH,
     exist_ok: bool = True,
     log_dir: str | Path | None = None,
-    export_torchscript: bool = False,
-    export_onnx: bool = False,
-    export_engine: bool = False,
-    torchscript_output_path: str | Path | None = None,
-    onnx_output_path: str | Path | None = None,
-    engine_output_path: str | Path | None = None,
-    export_imgsz: int | None = None,
-    export_opset: int = 12,
-    export_dynamic: bool = False,
-    export_simplify: bool = True,
-    export_overwrite: bool = True,
-    trtexec_path: str = "trtexec",
-    engine_fp16: bool = True,
-    engine_workspace_mb: int | None = None,
-    engine_verbose: bool = False,
-    engine_dry_run: bool = False,
-    torchscript_optimize: bool = False,
-    export_strict: bool = False,
-    export_python_path: str | Path | None = None,
+    training_control_dir: str | Path | None = None,
+    training_task_id: str | None = None,
+    training_model_id: str | None = None,
+    training_model_version: str | None = None,
     **augmentation_params: Any,
 ) -> dict:
-    """璁粌 YOLO26s SOP 妫€娴嬫ā鍨嬨€?
+    """训练 YOLO SOP 目标检测模型。
 
-    闈㈠悜杞欢绔殑绗竴鐗堝彲璋冨弬鏁板寘鎷細epochs銆乥atch銆乮mgsz銆亀orkers銆乨evice銆乵odel銆乷ptimizer銆乤mp銆?
-    val_ratio 浠ュ強甯哥敤鏁版嵁澧炲己鍙傛暟銆倂al_ratio 鍙湁鍦ㄥ悓鏃朵紶鍏?images_dir/labels_dir 鏃讹紝
-    鎵嶄細瑙﹀彂鏁版嵁闆嗛噸鏂板垝鍒嗐€?
+    软件端可配置训练轮数、批大小、输入尺寸、设备、优化器、混合精度和常用增强参数。
+    只有同时传入 images_dir 和 labels_dir 时，val_ratio 才会触发数据集重新划分。
     """
 
     base_model_path = Path(base_model_path)
@@ -109,27 +100,6 @@ def train_yolo_model(
         copy_best_to=copy_best_to,
         exist_ok=exist_ok,
         augmentations=selected_augmentations,
-        export_options={
-            "export_torchscript": bool(export_torchscript),
-            "export_onnx": bool(export_onnx),
-            "export_engine": bool(export_engine),
-            "torchscript_output_path": str(torchscript_output_path) if torchscript_output_path is not None else None,
-            "onnx_output_path": str(onnx_output_path) if onnx_output_path is not None else None,
-            "engine_output_path": str(engine_output_path) if engine_output_path is not None else None,
-            "export_imgsz": int(export_imgsz) if export_imgsz is not None else int(imgsz),
-            "export_opset": int(export_opset),
-            "export_dynamic": bool(export_dynamic),
-            "export_simplify": bool(export_simplify),
-            "export_overwrite": bool(export_overwrite),
-            "trtexec_path": trtexec_path,
-            "engine_fp16": bool(engine_fp16),
-            "engine_workspace_mb": engine_workspace_mb,
-            "engine_verbose": bool(engine_verbose),
-            "engine_dry_run": bool(engine_dry_run),
-            "torchscript_optimize": bool(torchscript_optimize),
-            "export_strict": bool(export_strict),
-            "export_python_path": str(export_python_path) if export_python_path is not None else None,
-        },
     )
     log_event(logger, "train_started", parameters=train_parameters)
     log_event(logger, "train_parameters", parameters=train_parameters)
@@ -166,8 +136,34 @@ def train_yolo_model(
         close_operation_logger(logger)
         raise ImportError("Missing ultralytics. Install the dependencies from requirements.txt first.") from exc
 
+    training_state: dict[str, Any] = {"current_epoch": 0, "stopped_by_user": False}
+    status_path = None
+    stop_path = None
+    task_id = training_task_id or run_name
+    if training_control_dir is not None:
+        status_path, stop_path = initialize_training_control(
+            training_control_dir,
+            task_id=task_id,
+            model_id=training_model_id,
+            model_version=training_model_version,
+            total_epochs=int(epochs),
+        )
+
     model = YOLO(str(base_model_path))
-    model.add_callback("on_fit_epoch_end", _build_epoch_logger(logger))
+    model.add_callback(
+        # This hook runs once per training epoch (unlike on_fit_epoch_end,
+        # which Ultralytics also invokes during final evaluation).
+        "on_train_epoch_end",
+        _build_epoch_logger(
+            logger,
+            training_state=training_state,
+            status_path=status_path,
+            stop_path=stop_path,
+            task_id=task_id,
+            model_id=training_model_id,
+            model_version=training_model_version,
+        ),
+    )
     train_kwargs = {
         "data": str(data_yaml_path),
         "epochs": int(epochs),
@@ -187,6 +183,18 @@ def train_yolo_model(
     try:
         model.train(**train_kwargs)
     except Exception as exc:
+        if status_path is not None:
+            write_training_status(
+                status_path,
+                task_id=task_id,
+                status="failed",
+                current_epoch=int(training_state["current_epoch"]),
+                total_epochs=int(epochs),
+                model_id=training_model_id,
+                model_version=training_model_version,
+                message="训练失败",
+                error=str(exc),
+            )
         logger.exception("train_failed | %s", exc)
         close_operation_logger(logger)
         raise
@@ -197,36 +205,13 @@ def train_yolo_model(
     results_csv = run_dir / "results.csv"
     args_yaml = run_dir / "args.yaml"
     copied_best_path = None
-    if copy_best_to is not None and best_path.exists():
+    stopped_by_user = bool(training_state["stopped_by_user"])
+    final_source_path = last_path if stopped_by_user else best_path
+    if copy_best_to is not None and final_source_path.exists():
         copy_target = Path(copy_best_to)
         copy_target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(best_path, copy_target)
+        shutil.copy2(final_source_path, copy_target)
         copied_best_path = str(copy_target)
-
-    export_source = Path(copied_best_path) if copied_best_path else best_path
-    exported_models = _export_requested_models(
-        source_model_path=export_source,
-        imgsz=int(export_imgsz) if export_imgsz is not None else int(imgsz),
-        export_torchscript_enabled=bool(export_torchscript),
-        export_onnx_enabled=bool(export_onnx),
-        export_engine_enabled=bool(export_engine),
-        torchscript_output_path=torchscript_output_path,
-        onnx_output_path=onnx_output_path,
-        engine_output_path=engine_output_path,
-        export_opset=int(export_opset),
-        export_dynamic=bool(export_dynamic),
-        export_simplify=bool(export_simplify),
-        export_overwrite=bool(export_overwrite),
-        trtexec_path=trtexec_path,
-        engine_fp16=bool(engine_fp16),
-        engine_workspace_mb=engine_workspace_mb,
-        engine_verbose=bool(engine_verbose),
-        engine_dry_run=bool(engine_dry_run),
-        torchscript_optimize=bool(torchscript_optimize),
-        export_strict=bool(export_strict),
-        export_python_path=export_python_path,
-        logger=logger,
-    )
 
     result = {
         "run_dir": str(run_dir),
@@ -235,11 +220,27 @@ def train_yolo_model(
         "results_csv": str(results_csv) if results_csv.exists() else None,
         "args_yaml": str(args_yaml) if args_yaml.exists() else None,
         "copied_best_model": copied_best_path,
-        "exported_models": exported_models,
+        "stopped_by_user": stopped_by_user,
+        "completed_epochs": int(training_state["current_epoch"]),
+        "requested_epochs": int(epochs),
+        "final_model_source": str(final_source_path) if final_source_path.exists() else None,
         "train_params": train_parameters,
         "log_path": str(log_path),
     }
     log_event(logger, "train_finished", **result)
+    if status_path is not None:
+        final_status = "stopped" if stopped_by_user else "completed"
+        write_training_status(
+            status_path,
+            task_id=task_id,
+            status=final_status,
+            current_epoch=int(training_state["current_epoch"]),
+            total_epochs=int(epochs),
+            model_id=training_model_id,
+            model_version=training_model_version,
+            message="训练已按用户要求停止" if stopped_by_user else "训练已完成",
+            stop_requested_value=stopped_by_user,
+        )
     close_operation_logger(logger)
     return result
 
@@ -273,7 +274,6 @@ def _build_train_parameters(
     copy_best_to: str | Path | None,
     exist_ok: bool,
     augmentations: dict[str, Any],
-    export_options: dict[str, Any],
 ) -> dict[str, Any]:
     """Build the effective training parameters for logs and return values."""
 
@@ -296,11 +296,10 @@ def _build_train_parameters(
         "copy_best_to": str(copy_best_to) if copy_best_to is not None else None,
         "exist_ok": bool(exist_ok),
         "augmentations": augmentations,
-        "export": export_options,
     }
 
 
-def _export_requested_models(
+def export_model_formats(
     source_model_path: Path,
     imgsz: int,
     export_torchscript_enabled: bool,
@@ -322,8 +321,9 @@ def _export_requested_models(
     export_strict: bool,
     export_python_path: str | Path | None,
     logger,
+    reuse_existing_onnx: bool = False,
 ) -> dict[str, Any]:
-    """Export trained model to ONNX and/or TensorRT when requested by software."""
+    """将checkpoint按请求转换为TorchScript、ONNX和/或TensorRT。"""
 
     result: dict[str, Any] = {
         "requested": {
@@ -385,44 +385,50 @@ def _export_requested_models(
             logger.exception("torchscript_export_failed | %s", exc)
             if export_strict:
                 raise
+    if not export_onnx_enabled and not export_engine_enabled:
+        return result
     engine_path = Path(engine_output_path) if engine_output_path is not None else source_model_path.with_suffix(".engine")
 
-    try:
-        log_event(logger, "onnx_export_started", source_model=str(source_model_path), output_path=str(onnx_path))
-        external_python = _find_export_python(export_python_path)
-        export_script = _find_export_script("export_onnx.py")
-        if external_python is not None and export_script is not None:
-            exported_onnx = _export_onnx_with_external_python(
-                python_path=external_python,
-                export_script=export_script,
-                model_path=source_model_path,
-                output_path=onnx_path,
-                imgsz=int(imgsz),
-                opset=int(export_opset),
-                simplify=bool(export_simplify),
-                dynamic=bool(export_dynamic),
-                overwrite=bool(export_overwrite),
-            )
-            log_event(logger, "onnx_export_used_external_python", python_path=str(external_python), export_script=str(export_script))
-        else:
-            exported_onnx = export_onnx_model(
-                model_path=source_model_path,
-                output_path=onnx_path,
-                imgsz=int(imgsz),
-                opset=int(export_opset),
-                simplify=bool(export_simplify),
-                dynamic=bool(export_dynamic),
-                overwrite=bool(export_overwrite),
-            )
-        result["onnx"] = str(exported_onnx)
-        log_event(logger, "onnx_export_finished", output_path=str(exported_onnx))
-    except Exception as exc:
-        message = f"onnx export failed: {exc}"
-        result["errors"].append(message)
-        logger.exception("onnx_export_failed | %s", exc)
-        if export_strict:
-            raise
-        return result
+    if reuse_existing_onnx and onnx_path.is_file():
+        result["onnx"] = str(onnx_path)
+        log_event(logger, "onnx_export_reused", output_path=str(onnx_path))
+    else:
+        try:
+            log_event(logger, "onnx_export_started", source_model=str(source_model_path), output_path=str(onnx_path))
+            external_python = _find_export_python(export_python_path)
+            export_script = _find_export_script("export_onnx.py")
+            if external_python is not None and export_script is not None:
+                exported_onnx = _export_onnx_with_external_python(
+                    python_path=external_python,
+                    export_script=export_script,
+                    model_path=source_model_path,
+                    output_path=onnx_path,
+                    imgsz=int(imgsz),
+                    opset=int(export_opset),
+                    simplify=bool(export_simplify),
+                    dynamic=bool(export_dynamic),
+                    overwrite=bool(export_overwrite),
+                )
+                log_event(logger, "onnx_export_used_external_python", python_path=str(external_python), export_script=str(export_script))
+            else:
+                exported_onnx = export_onnx_model(
+                    model_path=source_model_path,
+                    output_path=onnx_path,
+                    imgsz=int(imgsz),
+                    opset=int(export_opset),
+                    simplify=bool(export_simplify),
+                    dynamic=bool(export_dynamic),
+                    overwrite=bool(export_overwrite),
+                )
+            result["onnx"] = str(exported_onnx)
+            log_event(logger, "onnx_export_finished", output_path=str(exported_onnx))
+        except Exception as exc:
+            message = f"onnx export failed: {exc}"
+            result["errors"].append(message)
+            logger.exception("onnx_export_failed | %s", exc)
+            if export_strict:
+                raise
+            return result
 
     if export_engine_enabled:
         try:
@@ -571,7 +577,16 @@ def _export_torchscript_with_external_python(
         raise RuntimeError(f"external TorchScript export finished, but output file was not found: {output_path}")
     return output_path
 
-def _build_epoch_logger(logger):
+def _build_epoch_logger(
+    logger,
+    *,
+    training_state: dict[str, Any] | None = None,
+    status_path: Path | None = None,
+    stop_path: Path | None = None,
+    task_id: str = "train",
+    model_id: str | None = None,
+    model_version: str | None = None,
+):
     """Build an Ultralytics callback that logs epoch metrics."""
 
     def on_fit_epoch_end(trainer) -> None:
@@ -580,16 +595,42 @@ def _build_epoch_logger(logger):
             loss_items = trainer.label_loss_items(trainer.tloss)
         except Exception:
             pass
+        current_epoch = int(trainer.epoch) + 1
+        total_epochs = int(trainer.epochs)
+        if training_state is not None:
+            training_state["current_epoch"] = current_epoch
+        requested_stop = stop_path is not None and stop_requested(stop_path, task_id)
+        if requested_stop:
+            trainer.stop = True
+            if training_state is not None:
+                training_state["stopped_by_user"] = True
         log_event(
             logger,
             "train_epoch_finished",
-            epoch=int(trainer.epoch) + 1,
-            total_epochs=int(trainer.epochs),
+            epoch=current_epoch,
+            total_epochs=total_epochs,
             train_loss=loss_items,
             metrics=trainer.metrics or {},
             learning_rate=getattr(trainer, "lr", {}),
             fitness=getattr(trainer, "fitness", None),
         )
+        if status_path is not None:
+            write_training_status(
+                status_path,
+                task_id=task_id,
+                status="stopping" if requested_stop else "running",
+                current_epoch=current_epoch,
+                total_epochs=total_epochs,
+                model_id=model_id,
+                model_version=model_version,
+                latest_metrics=trainer.metrics or {},
+                stop_requested_value=requested_stop,
+                message=(
+                    f"已完成第 {current_epoch}/{total_epochs} 轮，正在停止"
+                    if requested_stop
+                    else f"已完成第 {current_epoch}/{total_epochs} 轮"
+                ),
+            )
 
     return on_fit_epoch_end
 

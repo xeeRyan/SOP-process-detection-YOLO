@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "project_id": "keyboard",
+  "name": "键盘",
+  "description": "操作员创建的新 SOP 项目",
+  "created_at": "2026-07-27T03:39:40.943816+00:00",
+  "updated_at": "2026-07-27T03:58:21.396017+00:00",
+  "status": "draft",
+"classes": [
+  {"id": 0, "name": "keyboard_front", "display_name": "键盘正面"},
+  {"id": 1, "name": "keyboard_back", "display_name": "键盘背面"},
+  {"id": 2, "name": "battery_compartment_open", "display_name": "电池仓打开"},
+  {"id": 3, "name": "battery", "display_name": "电池"},
+  {"id": 4, "name": "battery_cover_closed", "display_name": "电池盖关闭"}
+],
+  "active_model": null,
+  "active_workflow": "workflow.json",
+  "active_roi_profile": "rois.json"
+}

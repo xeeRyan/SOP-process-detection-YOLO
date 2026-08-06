@@ -48,7 +48,10 @@
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Target Name="CopyNativeRuntime" AfterTargets="Build">
     <ItemGroup>
-      <SopAidNativeRuntime Include="..\SOPAIDC++\x64\Release\SOPAIDExe\*.dll" />
+      <SopAidNativeRuntime Include="..\SOPAIDC++\x64\Release\SOPAID.dll" />
+      <SopAidNativeRuntime Include="..\SOPAIDC++\x64\Release\opencv_world*.dll" />
+      <SopAidNativeRuntime Include="..\SOPAIDC++\x64\Release\onnxruntime.dll" />
+      <SopAidNativeRuntime Include="..\SOPAIDC++\x64\Release\onnxruntime_providers_shared.dll" />
     </ItemGroup>
     <Copy SourceFiles="@(SopAidNativeRuntime)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
   </Target>

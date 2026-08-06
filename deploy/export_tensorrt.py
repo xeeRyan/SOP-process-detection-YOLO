@@ -1,4 +1,6 @@
-﻿from __future__ import annotations
+"""调用TensorRT trtexec将ONNX模型转换为Engine。"""
+
+from __future__ import annotations
 
 import argparse
 import shutil

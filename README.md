@@ -1,220 +1,162 @@
-# SOP 工序检测 Demo
+# SOPAID 多流程视频识别平台
 
-## Windows 环境重建
+SOPAID用于配置、训练和检测不同工业SOP流程。当前已完成Python主链路和WPF测试前端；
+C++推理工程保留在仓库中，待Python协议冻结后再统一整理和接入。
 
-项目固定使用 Python 3.12、PyTorch CUDA 12.6 和 PyInstaller。电脑迁移后，在项目根目录执行：
+## 当前能力
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup_env.ps1
+一个SOP项目独立包含：
+
+- 识别类别定义；
+- 原始流程视频；
+- 抽帧图片和外部YOLO标注；
+- ROI区域；
+- SOP步骤、顺序和触发规则；
+- 数据集、训练记录和模型版本；
+- 检测结果、事件与运行日志。
+
+检测流水线：
+
+```text
+视频
+  -> Python模型推理
+  -> 目标跟踪
+  -> 对象/ROI事件
+  -> SOP状态机
+  -> result.json / result.mp4
 ```
 
-脚本会安装 Python 3.12、创建 `.venv`、断点下载并校验 Torch wheel，然后安装运行与打包依赖。
+流程触发器支持：
 
-日常运行可直接使用 `uv run`，也可以激活虚拟环境：
+- 目标出现或进入ROI；
+- 手部进入ROI；
+- 对象出现、消失、进入、离开事件；
+- 多条件 `all/any` 组合；
+- 对象数量范围；
+- 同一跟踪目标跨ROI移动；
+- 条件连续保持指定时间；
+- 必选/可选步骤、稳定帧和超时。
 
-```powershell
-.\.venv\Scripts\Activate.ps1
-python scripts\check_env.py
-python SOP_PYD.py detect health
-```
+高级规则示例见
+[`docs/advanced_workflow_triggers.md`](docs/advanced_workflow_triggers.md)。
 
-本项目使用 YOLO26s 训练权重检测装配视频中的关键目标，并结合 MediaPipe 手部骨骼、固定 ROI 和 SOP 状态机判断操作是否按顺序完成。
-
-## 项目结构
+## 核心目录
 
 ```text
 SOPAID/
-├── SOP_PYD.py              # TCP/命令行封装入口，最终 exe 打包入口
-├── SOP_PYD.spec            # PyInstaller 打包配置
-├── config/app_config.json  # 模型、ROI、阈值、输出目录等默认配置
-├── SOPAIDC++/              # 原生 C++ 推理 DLL 与测试程序
-├── SOPAID_wrapper/         # 面向 .NET 的 C++/CLI 封装
-├── SOPAID_wrapper_test/    # C# 封装调用示例
-├── DEEPAIY/                # 外部参考封装样例，不参与本项目运行
-├── deploy/                 # ONNX/TensorRT 格式转换脚本
-├── docs/                   # 部署说明
-├── models/                 # 模型权重与 hand_landmarker.task
-├── outputs/                # 检测结果与运行日志
-├── scripts/                # 运行时算法核心模块
-├── tools/                  # 训练、抽帧、数据集整理、ROI 标定工具
-└── videos/                 # 测试视频
+├─ SOP_PYD.py                 # Python TCP/命令行入口
+├─ task_dispatcher.py         # 命令分发与参数解析
+├─ config/                    # 默认服务与检测配置
+├─ projects/                  # 各SOP项目配置和项目资产
+├─ scripts/
+│  ├─ inference/              # 统一Python推理接口及Ultralytics实现
+│  ├─ project/                # 项目加载、校验、路径和原子写入
+│  ├─ main_video.py           # 视频检测流水线
+│  ├─ tracking.py             # 轻量IoU目标跟踪
+│  ├─ events.py               # 对象和ROI事件层
+│  ├─ sop_logic.py            # SOP状态机与高级触发器
+│  ├─ hand_pose.py            # 手部关键点推理
+│  └─ visualizer.py           # 结果视频绘制
+├─ tools/                     # 抽帧、标注导入、数据集和训练
+├─ frontend/SopAidTcpTester/  # WPF联调前端
+├─ tests/                     # Python自动化测试
+├─ deploy/                    # ONNX/TensorRT导出脚本
+└─ docs/                      # 接口和部署文档
 ```
 
-## C++ 与 .NET 封装
+以下目录不属于当前Python运行主链：
 
-仓库同时提供原生 C++ 推理接口及其 .NET 调用链：
+- `DEEPAIY/`：历史参考实现；
+- `SOPAIDC++/`、`cpp_sopaid_dll/`：C++推理原型；
+- `SOPAID_wrapper/`、`SOPAID_wrapper_test/`：旧.NET封装原型；
+- `build/`、`dist/`、`outputs/`、`runs/`：生成产物。
+
+这些目录暂未自动删除，避免误删依赖、模型或尚待整理的C++代码。
+
+## SOP项目结构
 
 ```text
-SOPAIDC++/              # SOPAID.dll、SOPAIDExe 及三种模型后端源码
-SOPAID_wrapper/         # 将原生 DLL 封装为 .NET 可调用接口
-SOPAID_wrapper_test/    # C# 控制台测试项目
+projects/<PROJECT_ID>/
+├─ project.json
+├─ rois.json
+├─ workflow.json
+├─ source_videos/
+├─ frames/
+├─ annotations/
+├─ dataset/
+├─ models/
+├─ runs/
+└─ outputs/
 ```
 
-使用 Visual Studio 打开 `SOPAIDC++/SOPAID.sln` 编译原生 DLL。首次构建前，将
-`SOPAIDC++/SopAidInfer.user.props.template` 复制为 `SopAidInfer.user.props`，并按本机环境配置
-OpenCV、ONNX Runtime、TensorRT 和 LibTorch 路径。详细接口、运行参数及后端说明见
-[`SOPAIDC++/README.md`](SOPAIDC++/README.md)。
+`project.json`管理类别和活动模型；`rois.json`保存归一化ROI；`workflow.json`
+定义步骤和触发规则。
 
-`SOPAID_wrapper` 和 `SOPAID_wrapper_test` 分别为 C++/CLI 封装与 C# 调用示例；编译时需保证
-平台目标一致（推荐 `x64`），并让测试程序能够找到 `SOPAID.dll`、`SOPAID_wrapper.dll` 及对应运行库。
+## 运行
 
-## 运行时代码
-
-`scripts/` 目录只保留最终推理运行需要的模块：
-
-```text
-config.py           # 默认路径、阈值、ROI、SOP 步骤等代码级配置
-main_video.py       # 视频检测主流程
-detector.py         # YOLO 模型加载与目标检测
-hand_pose.py        # MediaPipe 手部骨骼检测
-sop_logic.py        # SOP 顺序状态机
-visualizer.py       # 检测框、ROI、骨骼和状态绘制
-utils.py            # 通用工具函数
-runtime_logging.py  # 运行日志
-check_env.py        # 环境检查
-```
-
-## 训练工具代码
-
-`tools/` 目录放算法开发阶段使用的工具：
-
-```text
-extract_frames.py    # 从视频抽帧
-prepare_dataset.py   # 整理 YOLO 数据集
-select_roi.py        # 交互式框选 ROI
-training.py          # YOLO 训练入口
-```
-
-示例：
+环境检查：
 
 ```powershell
-python tools\extract_frames.py
-python tools\prepare_dataset.py
-python tools\select_roi.py
+.\.venv\Scripts\python.exe scripts\check_env.py
 ```
 
-## 软件端封装入口
-
-当前项目复用 `DEEPLEARN_PYD.py` 的封装形式，另建本项目入口 `SOP_PYD.py`。
-
-无参数启动时默认监听 TCP 端口 `5000`：
+启动TCP服务，默认地址从`config/app_config.json`读取：
 
 ```powershell
-python SOP_PYD.py
+.\.venv\Scripts\python.exe SOP_PYD.py
 ```
 
-显式启动 TCP 服务：
+或指定端口：
 
 ```powershell
-python SOP_PYD.py tcp 5000
+.\.venv\Scripts\python.exe SOP_PYD.py tcp 9000
 ```
-
-TCP 客户端发送 JSON 文件路径：
-
-```text
-model_file:D:\Python\SOPAID\config\detect_request.json
-```
-
-也可以发送普通 JSON 字符串：
-
-```json
-{
-  "command": "detect",
-  "params": {
-    "video_path": "videos/sk.mp4",
-    "output_dir": "outputs/yolo26s"
-  }
-}
-```
-
-返回为 UTF-8 JSON 字符串：
-
-```json
-{
-  "status": "ok",
-  "message": "",
-  "data": {}
-}
-```
-
-关闭单次连接：
-
-```text
-end
-```
-
-关闭服务：
-
-```text
-close
-```
-
-## 命令行调用
 
 健康检查：
 
 ```powershell
-python SOP_PYD.py detect health
+.\.venv\Scripts\python.exe SOP_PYD.py health
 ```
 
-检测 JSON 文件：
+启动前端：
 
 ```powershell
-python SOP_PYD.py detect_file config\detect_request.json
+dotnet run --project frontend\SopAidTcpTester\SopAidTcpTester.csproj
 ```
 
-训练 JSON 文件：
+## TCP命令
 
-```powershell
-python SOP_PYD.py train_file config\train_request.json
-```
-
-## 默认输出
+当前支持：
 
 ```text
-outputs/yolo26s/result.mp4
-outputs/yolo26s/result.json
-outputs/logs/detect_*.log
+health
+list_projects
+create_project
+get_project
+update_project
+save_rois
+save_workflow
+activate_project
+extract_frames
+import_annotations
+build_dataset
+train_project
+detect
+train
 ```
 
-## EXE 打包
+接口说明见[`docs/PYTHON_TCP_API.md`](docs/PYTHON_TCP_API.md)。
+
+## 测试
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_exe.ps1
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+dotnet build frontend\SopAidTcpTester\SopAidTcpTester.csproj -c Release
 ```
 
-打包后运行：
+## 当前边界
 
-```powershell
-.\dist\SOP_PYD\SOP_PYD.exe detect health
-.\dist\SOP_PYD\SOP_PYD.exe tcp 5000
-```
-
-最终交付时，建议将 `config/`、`models/`、`outputs/` 放在 `SOP_PYD.exe` 同级目录。
-
-## 检测类别
-
-YOLO 只负责以下目标类别：
-
-```text
-bearing
-cover
-tool
-```
-
-手部信息由 MediaPipe 手部骨骼模块提供。
-
-SOP 顺序：
-
-```text
-bearing -> cover -> screw_action -> tool_return
-```
-
-## ONNX / TensorRT
-
-导出 ONNX：
-
-```powershell
-python deploy/export_onnx.py --overwrite
-```
-
+- Python推理接口已经可用，C++接口尚未并入同一后端工厂；
+- 当前跟踪器适合固定机位和中低速目标，复杂遮挡需升级ByteTrack等方案；
+- 高级规则提高了SOP表达能力，但不同SOP的检出率仍必须通过对应数据集验收；
+- 拧紧、安装到位、折叠完成等动作不能只依赖目标框和ROI，可能需要姿态、动作或状态分类模型。

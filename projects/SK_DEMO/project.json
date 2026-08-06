@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "project_id": "SK_DEMO",
+  "name": "SK 轴承盖板装配示例",
+  "description": "由原有固定 SOP 配置迁移的兼容项目",
+  "status": "active",
+  "classes": [
+    {
+      "id": 0,
+      "name": "bearing",
+      "display_name": "轴承"
+    },
+    {
+      "id": 1,
+      "name": "cover",
+      "display_name": "盖板"
+    },
+    {
+      "id": 2,
+      "name": "tool",
+      "display_name": "工具"
+    }
+  ],
+  "active_model": "models/sop_detector/1.0.3/best.pt",
+  "active_workflow": "workflow.json",
+  "active_roi_profile": "rois.json",
+  "updated_at": "2026-07-27T03:39:37.314238+00:00",
+  "active_model_manifest": "models/sop_detector/1.0.3/model_manifest.json"
+}

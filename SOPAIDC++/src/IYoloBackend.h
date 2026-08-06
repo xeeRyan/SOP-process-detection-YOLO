@@ -14,6 +14,7 @@ public:
     virtual ~IYoloBackend() = default;
     // 输入单帧 BGR 图像，输出统一的检测结构体列表。
     virtual SopAidStatus evaluate(const cv::Mat& image, std::vector<SopAidDetection>& results, SopAidError* error) = 0;
+    virtual const char* backendName() const = 0;
 };
 
 // 三种模型格式分别创建对应后端；未启用的后端会返回 UnsupportedModel。

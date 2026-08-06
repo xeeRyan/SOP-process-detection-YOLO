@@ -1,3 +1,5 @@
+"""训练和检测任务使用的结构化日志工具。"""
+
 from __future__ import annotations
 
 import json

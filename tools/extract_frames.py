@@ -1,3 +1,5 @@
+"""独立的视频抽帧命令行工具。"""
+
 from __future__ import annotations
 
 import argparse
@@ -9,7 +11,8 @@ import cv2
 if __package__ is None or __package__ == "":
     sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from scripts.config import DEFAULT_VIDEO_PATH, ROOT
+from scripts.config import ROOT
+from scripts.legacy_sk_config import DEFAULT_VIDEO_PATH
 from scripts.utils import ensure_dir
 
 

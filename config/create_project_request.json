@@ -1,0 +1,12 @@
+{
+  "command": "create_project",
+  "params": {
+    "project_id": "SOP_002",
+    "name": "新装配流程",
+    "description": "操作员创建的新 SOP 项目",
+    "classes": [
+      {"id": 0, "name": "part_a", "display_name": "零件 A"},
+      {"id": 1, "name": "tool", "display_name": "工具"}
+    ]
+  }
+}

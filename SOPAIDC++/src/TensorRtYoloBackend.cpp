@@ -243,6 +243,8 @@ public:
         cuda_.createStream(&stream_);
     }
 
+    const char* backendName() const override { return "tensorrt"; }
+
     ~TensorRtYoloBackend() override {
         cuda_.destroyStream(stream_);
         cuda_.free(input_device_);

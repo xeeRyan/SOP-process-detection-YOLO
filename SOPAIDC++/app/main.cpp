@@ -40,9 +40,15 @@ struct SopAidRequestConfig {
         "E:/Project/SOPAID/SOPAID/outputs";
     std::string palm_model_path = kDefaultPalmModelPath;
     std::string handpose_model_path = kDefaultHandPoseModelPath;
+    std::string class_names_csv = "bearing,cover,tool";
+    std::string project_id = "SK_DEMO";
+    std::string model_id;
+    std::string model_version;
+    std::string project_dir;
     int sample_interval = 30;
 
     SopAidInitConfig yolo;
+    SopAidProjectInitConfig project_yolo;
     SopAidHandInitConfig hand;
 
     SopAidRequestConfig() {
@@ -51,7 +57,6 @@ struct SopAidRequestConfig {
         yolo.input_height = 640;
         yolo.confidence_threshold = 0.25f;
         yolo.nms_threshold = 0.70f;
-        yolo.class_names_csv = "bearing,cover,tool";
         yolo.use_cuda = true;
         yolo.device_id = 0;
 
@@ -64,6 +69,11 @@ struct SopAidRequestConfig {
     void bindPaths() {
         yolo.model_path = model_path.c_str();
         yolo.model_format = inferFormatFromPath(model_path);
+        yolo.class_names_csv = class_names_csv.c_str();
+        project_yolo.inference = yolo;
+        project_yolo.project_id = project_id.empty() ? nullptr : project_id.c_str();
+        project_yolo.model_id = model_id.empty() ? nullptr : model_id.c_str();
+        project_yolo.model_version = model_version.empty() ? nullptr : model_version.c_str();
         hand.palm_model_path = palm_model_path.c_str();
         hand.handpose_model_path = handpose_model_path.c_str();
     }
@@ -216,6 +226,10 @@ void writeParamsJson(
     out << "  \"confidence_threshold\": " << config.confidence_threshold << ",\n";
     out << "  \"nms_threshold\": " << config.nms_threshold << ",\n";
     out << "  \"class_names_csv\": \"" << jsonEscape(config.class_names_csv ? config.class_names_csv : "") << "\",\n";
+    out << "  \"project_id\": \"" << jsonEscape(request.project_id) << "\",\n";
+    out << "  \"model_id\": \"" << jsonEscape(request.model_id) << "\",\n";
+    out << "  \"model_version\": \"" << jsonEscape(request.model_version) << "\",\n";
+    out << "  \"resize_mode\": \"letterbox\",\n";
     out << "  \"use_cuda\": " << (config.use_cuda ? "true" : "false") << ",\n";
     out << "  \"device_id\": " << config.device_id << ",\n";
     out << "  \"enable_hand_pose\": " << (enable_hand_pose ? "true" : "false") << ",\n";
@@ -399,7 +413,8 @@ void smoothHandResults(const std::vector<SopAidHandResult>& previous, std::vecto
 
 void printUsage() {
     std::cout << "Usage:" << std::endl;
-    std::cout << "  SOPAID.exe [model_path] [video_path] [output_root] [confidence_threshold] [nms_threshold] [palm_model_path] [handpose_model_path] [sample_interval]" << std::endl;
+    std::cout << "  SOPAID.exe [model_path] [video_path] [output_root] [confidence_threshold] [nms_threshold] [palm_model_path] [handpose_model_path] [sample_interval] [class_names_csv] [project_id] [model_id] [model_version] [project_dir]" << std::endl;
+    std::cout << "  When project_dir is provided, model_path/classes/project metadata are resolved from project.json." << std::endl;
     std::cout << "  All arguments are optional; defaults are defined in SopAidRequestConfig." << std::endl;
     std::cout << "  sample_interval only controls saved sample images, not inference frequency." << std::endl;
 }
@@ -419,6 +434,11 @@ int main(int argc, char** argv) {
         std::cout << "Invalid sample_interval: " << args[8] << std::endl;
         return 1;
     }
+    if (args.size() > 9) request.class_names_csv = args[9];
+    if (args.size() > 10) request.project_id = args[10];
+    if (args.size() > 11) request.model_id = args[11];
+    if (args.size() > 12) request.model_version = args[12];
+    if (args.size() > 13) request.project_dir = args[13];
 
     if (args.size() > 4 && !parseFloat(args[4].c_str(), request.yolo.confidence_threshold)) {
         std::cout << "Invalid confidence_threshold: " << args[4] << std::endl;
@@ -471,9 +491,33 @@ int main(int argc, char** argv) {
     // 一个推理对象初始化一次，后续每帧只传入 Mat 并接收 vector 结果。
     SopAidError err;
     sopaid::Inference inference;
-    if (inference.Init(request.yolo, &err) != SopAidStatus::Ok) {
+    SopAidStatus init_status = SopAidStatus::Ok;
+    if (!request.project_dir.empty()) {
+        SopAidProjectDirectoryConfig project_directory;
+        project_directory.project_dir = request.project_dir.c_str();
+        project_directory.preferred_model_format = SopAidModelFormat::Auto;
+        project_directory.input_width = request.yolo.input_width;
+        project_directory.input_height = request.yolo.input_height;
+        project_directory.confidence_threshold = request.yolo.confidence_threshold;
+        project_directory.nms_threshold = request.yolo.nms_threshold;
+        project_directory.use_cuda = request.yolo.use_cuda;
+        project_directory.device_id = request.yolo.device_id;
+        init_status = inference.InitProjectDirectory(project_directory, &err);
+    } else {
+        init_status = inference.InitProject(request.project_yolo, &err);
+    }
+    if (init_status != SopAidStatus::Ok) {
         logger.error(std::string("Init failed: ") + err.message);
         return 1;
+    }
+    SopAidModelInfo model_info;
+    if (inference.GetModelInfo(model_info, &err) == SopAidStatus::Ok) {
+        logger.info(
+            std::string("Model initialized: project=") + model_info.project_id +
+            ", model=" + model_info.model_id +
+            ", version=" + model_info.model_version +
+            ", backend=" + model_info.backend +
+            ", classes=" + std::to_string(model_info.class_count));
     }
 
     SopAidHandHandle hand_handle = nullptr;

@@ -337,20 +337,17 @@ bool inferHand(HandPoseContext& context, const cv::Mat& image, const PalmDetecti
 
 }  // namespace
 
-extern "C" SOPAID_API SopAidHandHandle SopAidHand_Init(const SopAidHandInitConfig* config, SopAidError* error) {
-    if (!config) {
-        SetHandError(error, SopAidStatus::InvalidArgument, "hand config is null.");
-        return nullptr;
-    }
+namespace sopaid {
 
+SOPAID_API SopAidHandHandle HandInit(const SopAidHandInitConfig& config, SopAidError* error) {
     std::string palm_path;
     std::string handpose_path;
-    const SopAidStatus status = ValidateHandConfig(*config, palm_path, handpose_path, error);
+    const SopAidStatus status = ValidateHandConfig(config, palm_path, handpose_path, error);
     if (status != SopAidStatus::Ok) return nullptr;
 
     try {
         auto* context = new HandPoseContext();
-        context->config = *config;
+        context->config = config;
         context->palm_path = palm_path;
         context->handpose_path = handpose_path;
         context->anchors = createPalmAnchors();
@@ -371,16 +368,6 @@ extern "C" SOPAID_API SopAidHandHandle SopAidHand_Init(const SopAidHandInitConfi
         SetHandError(error, SopAidStatus::BackendError, std::string("Init hand ONNX failed: ") + ex.what());
     }
     return nullptr;
-}
-
-extern "C" SOPAID_API void SopAidHand_Release(SopAidHandHandle handle) {
-    delete static_cast<HandPoseContext*>(handle);
-}
-
-namespace sopaid {
-
-SOPAID_API SopAidHandHandle HandInit(const SopAidHandInitConfig& config, SopAidError* error) {
-    return SopAidHand_Init(&config, error);
 }
 
 SOPAID_API SopAidStatus HandEvaluate(
@@ -420,7 +407,7 @@ SOPAID_API SopAidStatus HandEvaluate(
 }
 
 SOPAID_API void HandRelease(SopAidHandHandle handle) {
-    SopAidHand_Release(handle);
+    delete static_cast<HandPoseContext*>(handle);
 }
 
 }  // namespace sopaid

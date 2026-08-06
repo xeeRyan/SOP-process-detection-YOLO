@@ -27,7 +27,7 @@ std::string lower(std::string value) {
 }  // namespace
 
 std::vector<std::string> ParseClassNames(const char* csv) {
-    // 类别名来自初始化结构体，为空时回退到当前 SOP 模型的默认三类。
+    // 类别名由当前SOP项目显式提供；不再回退到旧流程的固定三类。
     std::vector<std::string> names;
     std::stringstream stream(csv ? csv : "");
     std::string item;
@@ -36,9 +36,6 @@ std::vector<std::string> ParseClassNames(const char* csv) {
         if (!item.empty()) {
             names.push_back(item);
         }
-    }
-    if (names.empty()) {
-        names = {"bearing", "cover", "tool"};
     }
     return names;
 }
@@ -83,7 +80,9 @@ SopAidDetection MakeDetection(
     detection.y2 = static_cast<float>(box.y + box.height);
 
     const std::string name =
-        (class_id >= 0 && class_id < static_cast<int>(class_names.size())) ? class_names[class_id] : std::to_string(class_id);
+        (class_id >= 0 && class_id < static_cast<int>(class_names.size()))
+            ? class_names[class_id]
+            : ("unknown_" + std::to_string(class_id));
     std::memset(detection.class_name, 0, sizeof(detection.class_name));
     std::memcpy(detection.class_name, name.data(), std::min(name.size(), sizeof(detection.class_name) - 1));
     return detection;

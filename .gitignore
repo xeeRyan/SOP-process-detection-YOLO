@@ -10,9 +10,15 @@ dist/
 
 # Virtual environments and local IDE settings
 .venv/
+.uv-cache/
+.test-tmp/
 .idea/
 .vscode/
 .vs/
+**/x64/
+*.user
+*.user.props
+!*.user.props.template
 cpp_sopaid_dll/SopAidInfer.user.props
 
 # C/C++ and Visual Studio build outputs
@@ -36,8 +42,23 @@ models/**
 outputs/**
 runs/**
 
+# Per-project generated media and training artifacts (keep project JSON configs tracked)
+projects/*/source_videos/**
+projects/*/frames/**
+projects/*/annotations/**
+projects/*/dataset/**
+projects/*/models/**
+projects/*/runs/**
+projects/*/outputs/**
+projects/*/frames_manifest.json
+projects/*/annotation_import_report.json
+
 # OS and editor temporary files
 .DS_Store
 Thumbs.db
 *.tmp
 *.log
+*.rar
+*.lnk
+*.pt
+*.pth

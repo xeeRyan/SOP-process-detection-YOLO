@@ -30,6 +30,9 @@
     <ClInclude Include="src\IYoloBackend.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="src\ProjectModelResolver.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="src\YoloPostprocess.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -48,6 +51,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\OnnxYoloBackend.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ProjectModelResolver.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="src\TensorRtYoloBackend.cpp">

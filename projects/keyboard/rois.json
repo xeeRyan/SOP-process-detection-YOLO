@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "coordinate_type": "normalized",
+  "regions": [
+    {
+      "id": "keyboard_area",
+      "name": "键盘整体操作区域",
+      "shape": "rectangle",
+      "points": [
+        [
+          0.197888,
+          0.292126
+        ],
+        [
+          0.72358,
+          0.661452
+        ]
+      ]
+    },
+    {
+      "id": "battery_compartment",
+      "name": "电池仓区域",
+      "shape": "rectangle",
+      "points": [
+        [
+          0.442496,
+          0.366504
+        ],
+        [
+          0.558363,
+          0.463965
+        ]
+      ]
+    }
+  ]
+}

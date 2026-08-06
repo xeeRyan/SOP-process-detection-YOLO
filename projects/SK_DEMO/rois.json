@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "reference_width": 2448,
+  "reference_height": 2048,
+  "coordinate_type": "normalized",
+  "regions": [
+    {"id": "work", "name": "主工作区", "shape": "rectangle", "points": [[0.4554738562, 0.552734375], [0.6732026144, 0.7431640625]]},
+    {"id": "screw_bin", "name": "螺丝盘", "shape": "rectangle", "points": [[0.4460784314, 0.2465820313], [0.5759803922, 0.455078125]]},
+    {"id": "tool_home", "name": "工具归位区", "shape": "rectangle", "points": [[0.3194444444, 0.248046875], [0.4526143791, 0.4541015625]]}
+  ]
+}
