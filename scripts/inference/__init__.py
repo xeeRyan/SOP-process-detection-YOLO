@@ -6,6 +6,8 @@
 
 from scripts.inference.base import DetectorBackend
 from scripts.inference.factory import build_detector
+from scripts.inference.fusion import DetectionFusion
+from scripts.inference.router import ModelRouter
 from scripts.inference.types import Detection
 
-__all__ = ["Detection", "DetectorBackend", "build_detector"]
+__all__ = ["Detection", "DetectionFusion", "DetectorBackend", "ModelRouter", "build_detector"]

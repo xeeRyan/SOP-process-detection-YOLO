@@ -2,7 +2,7 @@
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup Label="UserMacros">
     <!-- Copy this file to SopAidInfer.user.props and adjust paths for your machine. -->
-    <OpenCVRoot>D:\3rdparty\opencv\build</OpenCVRoot>
+    <OpenCVRoot>$(SOPAID_OPENCV_ROOT)</OpenCVRoot>
     <OpenCVVersion>480</OpenCVVersion>
     <OpenCVIncludeDir>$(OpenCVRoot)\include</OpenCVIncludeDir>
     <OpenCVLibDir>$(OpenCVRoot)\x64\vc16\lib</OpenCVLibDir>

@@ -7,8 +7,9 @@ import unittest
 from pathlib import Path
 
 import scripts.config as runtime_config
-from scripts.legacy_sk_config import DEFAULT_MODEL_PATH, DEFAULT_SOP_PROJECT_DIR
 from scripts.main_video import process_video
+
+DEFAULT_SOP_PROJECT_DIR = Path(__file__).resolve().parents[1] / "projects" / "SK_DEMO"
 
 
 class ConfigBoundaryTests(unittest.TestCase):
@@ -45,10 +46,6 @@ class ConfigBoundaryTests(unittest.TestCase):
                     output_dir=project_dir / "outputs",
                     sop_project_dir=project_dir,
                 )
-
-    def test_legacy_default_model_remains_available(self) -> None:
-        self.assertEqual(DEFAULT_MODEL_PATH.name, "best_yolo26s.pt")
-
 
 if __name__ == "__main__":
     unittest.main()

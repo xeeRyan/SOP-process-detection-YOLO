@@ -66,8 +66,7 @@ SOPAID/
 
 以下目录不属于当前Python运行主链：
 
-- `DEEPAIY/`：历史参考实现；
-- `SOPAIDC++/`、`cpp_sopaid_dll/`：C++推理原型；
+- `SOPAIDC++/`：当前C++推理工程；
 - `SOPAID_wrapper/`、`SOPAID_wrapper_test/`：旧.NET封装原型；
 - `build/`、`dist/`、`outputs/`、`runs/`：生成产物。
 
@@ -89,15 +88,19 @@ projects/<PROJECT_ID>/
 └─ outputs/
 ```
 
-`project.json`管理类别和活动模型；`rois.json`保存归一化ROI；`workflow.json`
-定义步骤和触发规则。
+`project.json`管理类别和活动模型（`active_model_task` 支持 `detect`、`segment`、`pose`）；
+`rois.json`保存归一化ROI；`workflow.json`定义步骤和触发规则。步骤可通过
+`trigger.evidence.type` 选择 `bbox`、`mask` 或 `keypoints`。
+
+同一项目需要多种视觉能力时，在 `project.json` 的 `model_profiles` 中按任务补充模型路径；
+检测模型用于跟踪，分割/姿态模型只为对应步骤提供证据。
 
 ## 运行
 
 环境检查：
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\check_env.py
+.\.venv\Scripts\python.exe scripts\check_env.py --project projects\SK_DEMO --video videos\sk.mp4
 ```
 
 启动TCP服务，默认地址从`config/app_config.json`读取：
@@ -157,6 +160,6 @@ dotnet build frontend\SopAidTcpTester\SopAidTcpTester.csproj -c Release
 ## 当前边界
 
 - Python推理接口已经可用，C++接口尚未并入同一后端工厂；
-- 当前跟踪器适合固定机位和中低速目标，复杂遮挡需升级ByteTrack等方案；
+- 当前跟踪器统一使用ByteTrack两阶段匹配和卡尔曼运动预测，复杂遮挡场景仍需用项目数据集专项验收；
 - 高级规则提高了SOP表达能力，但不同SOP的检出率仍必须通过对应数据集验收；
 - 拧紧、安装到位、折叠完成等动作不能只依赖目标框和ROI，可能需要姿态、动作或状态分类模型。

@@ -4,29 +4,33 @@
     "port": 9000
   },
   "paths": {
-    "video_path": "videos/sk.mp4",
     "output_dir": "outputs/yolo26s",
     "hand_pose_model_path": "models/hand_landmarker.task"
   },
   "hand_pose": {
     "enabled": true,
-    "sample_interval": 1
+    "sample_interval": 1,
+    "active_step_only": false
+  },
+  "vision": {
+    "inference_interval_frames": 2
   },
   "tracking": {
-    "iou_threshold": 0.2,
+    "iou_threshold": 0.3,
     "max_missing_frames": 8,
-    "event_lost_tolerance_frames": 8
+    "min_confirmed_hits": 1,
+    "low_confidence": 0.1,
+    "new_track_confidence": 0.6,
+    "second_match_iou_threshold": 0.2,
+    "event_lost_tolerance_frames": 8,
+    "event_enter_stable_frames": 2,
+    "event_exit_stable_frames": 2
   },
   "ai": {
     "enable_yolo": true,
     "inference_backend": "python",
     "confidence_threshold": 0.25,
-    "nms_threshold": 0.7,
-    "target_classes": [
-      "bearing",
-      "cover",
-      "tool"
-    ]
+    "nms_threshold": 0.7
   },
   "output": {
     "output_video": true,

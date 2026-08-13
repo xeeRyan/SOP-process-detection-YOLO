@@ -11,24 +11,24 @@ if __package__ is None or __package__ == "":
     sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from scripts.config import DEFAULT_HAND_POSE_MODEL_PATH
-from scripts.legacy_sk_config import DEFAULT_MODEL_PATH, DEFAULT_VIDEO_PATH
+from scripts.project import load_sop_project
 
-
-# 环境自检项：交付 demo 前确认模型、视频和关键依赖是否齐全。
-REQUIRED_FILES = {
-    "YOLO 训练权重": DEFAULT_MODEL_PATH,
-    "手部骨骼模型": DEFAULT_HAND_POSE_MODEL_PATH,
-    "默认测试视频": DEFAULT_VIDEO_PATH,
-}
 
 REQUIRED_PACKAGES = ["cv2", "numpy", "ultralytics", "mediapipe"]
 
 
-def check_files() -> list[str]:
-    """检查项目运行所需的模型和视频文件。"""
+def check_files(project_dir: str | Path, video_path: str | Path | None = None) -> list[str]:
+    """检查指定 SOP 项目及可选输入视频所需的文件。"""
 
     errors: list[str] = []
-    for label, path in REQUIRED_FILES.items():
+    project = load_sop_project(project_dir)
+    required_files = {
+        "项目活动模型": project.active_model_path,
+        "手部骨骼模型": DEFAULT_HAND_POSE_MODEL_PATH,
+    }
+    if video_path not in (None, ""):
+        required_files["输入视频"] = Path(video_path)
+    for label, path in required_files.items():
         if not Path(path).exists():
             errors.append(f"缺少{label}: {path}")
     return errors
@@ -70,10 +70,17 @@ def collect_versions() -> dict[str, str]:
 def main() -> None:
     """命令行入口：输出环境自检结果。"""
 
-    errors = check_files() + check_packages()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="检查 SOP 项目运行环境")
+    parser.add_argument("--project", required=True, help="SOP 项目目录")
+    parser.add_argument("--video", help="待检测视频路径")
+    args = parser.parse_args()
+
+    errors = check_files(args.project, args.video) + check_packages()
     versions = collect_versions()
 
-    print("===== SOP Demo 环境自检 =====")
+    print("===== SOP 项目环境自检 =====")
     for name, version in versions.items():
         print(f"{name}: {version}")
 

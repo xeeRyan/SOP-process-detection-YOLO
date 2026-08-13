@@ -34,7 +34,7 @@ public partial class MainWindow : Window
     public IReadOnlyList<string> TriggerTypes { get; } =
     [
         "object_in_roi", "object_present", "hand_in_roi", "object_event",
-        "composite", "object_count", "object_transition", "duration"
+        "composite", "object_count", "object_transition", "roi_batch_removed", "duration"
     ];
     public IReadOnlyList<string> EventTypes { get; } =
     [
@@ -390,6 +390,8 @@ public partial class MainWindow : Window
             ["enable_yolo"] = EnableYoloCheckBox.IsChecked == true,
             ["enable_hand_pose"] = EnableHandPoseCheckBox.IsChecked == true,
             ["hand_pose_sample_interval"] = ParseInt(HandPoseIntervalTextBox, "手部采样间隔"),
+            ["hand_pose_active_step_only"] = HandPoseActiveStepOnlyCheckBox.IsChecked == true,
+            ["vision_inference_interval_frames"] = ParseInt(VisionIntervalTextBox, "视觉推理间隔"),
             ["output_video"] = OutputVideoCheckBox.IsChecked == true,
             ["tracking_iou_threshold"] = ParseDouble(TrackingIouTextBox, "跟踪 IoU 阈值"),
             ["tracking_max_missing_frames"] = ParseInt(TrackingMissingTextBox, "跟踪最大丢失帧"),
@@ -787,7 +789,7 @@ public partial class MainWindow : Window
         foreach (var item in WorkflowSteps)
         {
             var advanced = item.TriggerType is "composite" or "object_count"
-                or "object_transition" or "duration" or "object_event";
+                or "object_transition" or "roi_batch_removed" or "duration" or "object_event";
             if (string.IsNullOrWhiteSpace(item.Id) || !ids.Add(item.Id)) throw new InvalidOperationException($"步骤 ID 不能为空或重复: {item.Id}");
             if (string.IsNullOrWhiteSpace(item.Name)) throw new InvalidOperationException($"步骤 {item.Id} 缺少名称。");
             if (!TriggerTypes.Contains(item.TriggerType)) throw new InvalidOperationException($"步骤 {item.Id} 的触发方式无效。");
@@ -1306,7 +1308,7 @@ public partial class MainWindow : Window
             if (parent is null) break;
             dir = parent.FullName;
         }
-        return @"E:\Project\SOPAID\SOPAID";
+        return AppContext.BaseDirectory;
     }
 
     protected override void OnClosed(EventArgs e) { base.OnClosed(e); _serverProcess?.Dispose(); }

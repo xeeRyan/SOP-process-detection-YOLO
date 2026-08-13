@@ -13,6 +13,7 @@ SUPPORTED_TRIGGER_TYPES = {
     "composite",
     "object_count",
     "object_transition",
+    "roi_batch_removed",
     "duration",
 }
 SUPPORTED_OBJECT_EVENTS = {
@@ -22,6 +23,7 @@ SUPPORTED_OBJECT_EVENTS = {
     "object_exit_roi",
     "object_move_roi",
 }
+SUPPORTED_MODEL_TASKS = {"detect", "segment", "pose"}
 
 
 class ProjectValidationError(ValueError):
@@ -33,6 +35,32 @@ class ProjectValidationError(ValueError):
 def validate_project(project: dict[str, Any]) -> None:
     _require_text(project, "project_id", "project_id")
     _require_text(project, "name", "name")
+    model_task = project.get("active_model_task", "detect")
+    if model_task not in SUPPORTED_MODEL_TASKS:
+        _fail(
+            f"不支持的活动模型任务: {model_task}",
+            "active_model_task",
+        )
+    model_profiles = project.get("model_profiles", {})
+    if not isinstance(model_profiles, dict):
+        _fail("model_profiles必须是对象", "model_profiles")
+    for task, profile in model_profiles.items():
+        if task not in SUPPORTED_MODEL_TASKS:
+            _fail(f"不支持的模型任务: {task}", f"model_profiles.{task}")
+        if not isinstance(profile, dict):
+            _fail("模型配置必须是对象", f"model_profiles.{task}")
+        _require_text(profile, "path", f"model_profiles.{task}.path")
+        profile_task = profile.get("task", task)
+        if profile_task != task:
+            _fail("模型配置task必须与键名一致", f"model_profiles.{task}.task")
+        interval = profile.get("inference_interval_frames")
+        if interval is not None and (
+            isinstance(interval, bool) or not isinstance(interval, int) or interval <= 0
+        ):
+            _fail(
+                "inference_interval_frames必须是正整数",
+                f"model_profiles.{task}.inference_interval_frames",
+            )
     classes = project.get("classes")
     if not isinstance(classes, list) or not classes:
         _fail("项目至少需要定义一个识别类别", "classes")
@@ -101,6 +129,7 @@ def validate_workflow(
     steps = workflow.get("steps")
     if not isinstance(steps, list) or not steps:
         _fail("流程至少需要定义一个步骤", "steps")
+    _validate_workflow_constraints(workflow.get("constraints", {}), class_names, roi_ids)
 
     step_ids: set[str] = set()
     orders: set[int] = set()
@@ -133,6 +162,81 @@ def validate_workflow(
             _fail("timeout_sec必须大于0", f"{field}.timeout_sec")
         step_ids.add(step_id)
         orders.add(order)
+    reset_step_ids = (
+        workflow.get("constraints", {})
+        .get("batch_policy", {})
+        .get("reset_sequence_on_step_ids", [])
+        if isinstance(workflow.get("constraints", {}), dict)
+        else []
+    )
+    for reset_step_id in reset_step_ids:
+        if reset_step_id not in step_ids:
+            _fail(
+                f"批次重置步骤不存在: {reset_step_id}",
+                "constraints.batch_policy.reset_sequence_on_step_ids",
+            )
+
+
+def _validate_workflow_constraints(
+    constraints: Any,
+    class_names: set[str],
+    roi_ids: set[str],
+) -> None:
+    """校验通用属性序列和批次重置声明。"""
+
+    if constraints in (None, {}):
+        return
+    if not isinstance(constraints, dict):
+        _fail("workflow.constraints必须是对象", "constraints")
+    sequences = constraints.get("attribute_sequences", [])
+    if not isinstance(sequences, list):
+        _fail("attribute_sequences必须是数组", "constraints.attribute_sequences")
+    ids: set[str] = set()
+    for index, sequence in enumerate(sequences):
+        field = f"constraints.attribute_sequences[{index}]"
+        if not isinstance(sequence, dict):
+            _fail("属性序列约束必须是对象", field)
+        sequence_id = _require_text(sequence, "id", f"{field}.id")
+        if sequence_id in ids:
+            _fail(f"属性序列约束id重复: {sequence_id}", f"{field}.id")
+        ids.add(sequence_id)
+        if sequence.get("class_name") and sequence["class_name"] not in class_names:
+            _fail("属性序列约束引用了未定义类别", f"{field}.class_name")
+        if sequence.get("roi_id") and sequence["roi_id"] not in roi_ids:
+            _fail("属性序列约束引用了不存在的ROI", f"{field}.roi_id")
+        event = sequence.get("event", "object_enter_roi")
+        if event not in SUPPORTED_OBJECT_EVENTS:
+            _fail("属性序列约束event无效", f"{field}.event")
+        axes = sequence.get("axes")
+        if not isinstance(axes, list) or not axes:
+            _fail("属性序列约束必须定义axes", f"{field}.axes")
+        attributes: set[str] = set()
+        for axis_index, axis in enumerate(axes):
+            axis_field = f"{field}.axes[{axis_index}]"
+            if not isinstance(axis, dict):
+                _fail("sequence axis必须是对象", axis_field)
+            attribute = _require_text(axis, "attribute", f"{axis_field}.attribute")
+            if attribute in attributes:
+                _fail("sequence axis属性不能重复", f"{axis_field}.attribute")
+            attributes.add(attribute)
+            values = axis.get("values")
+            if not isinstance(values, list) or len(values) < 2 or not all(isinstance(value, str) and value.strip() for value in values):
+                _fail("sequence axis values至少需要两个非空字符串", f"{axis_field}.values")
+            if len(set(values)) != len(values):
+                _fail("sequence axis values不能重复", f"{axis_field}.values")
+            if axis.get("mode", "alternate") != "alternate":
+                _fail("sequence axis mode只支持alternate", f"{axis_field}.mode")
+            initial = axis.get("initial", "auto")
+            if initial != "auto" and initial not in values:
+                _fail("sequence axis initial必须是auto或values中的值", f"{axis_field}.initial")
+    batch_policy = constraints.get("batch_policy", {})
+    if batch_policy in (None, {}):
+        return
+    if not isinstance(batch_policy, dict):
+        _fail("constraints.batch_policy必须是对象", "constraints.batch_policy")
+    reset_steps = batch_policy.get("reset_sequence_on_step_ids", [])
+    if not isinstance(reset_steps, list) or not all(isinstance(step_id, str) and step_id.strip() for step_id in reset_steps):
+        _fail("reset_sequence_on_step_ids必须是非空字符串数组", "constraints.batch_policy.reset_sequence_on_step_ids")
 
 
 def _validate_trigger(
@@ -151,6 +255,7 @@ def _validate_trigger(
     stable_frames = trigger.get("stable_frames", 3)
     if not isinstance(stable_frames, int) or stable_frames <= 0:
         _fail("stable_frames必须是正整数", f"{field}.stable_frames")
+    _validate_evidence(trigger.get("evidence"), f"{field}.evidence")
 
     if trigger_type == "composite":
         if trigger.get("operator", "all") not in {"all", "any"}:
@@ -189,9 +294,9 @@ def _validate_trigger(
             _fail("from_roi_id与to_roi_id不能相同", field)
         return
 
-    if trigger_type == "object_count":
-        _validate_class_reference(trigger, class_names, field)
-        if trigger.get("roi_id"):
+    if trigger_type in {"object_count", "roi_batch_removed"}:
+        _validate_class_group_reference(trigger, class_names, field)
+        if trigger_type == "roi_batch_removed" or trigger.get("roi_id"):
             _validate_roi_reference(trigger, roi_ids, field)
         minimum = trigger.get("min_count", trigger.get("count", 1))
         maximum = trigger.get("max_count")
@@ -201,6 +306,11 @@ def _validate_trigger(
             not isinstance(maximum, int) or maximum < minimum
         ):
             _fail("max_count必须是不小于min_count的整数", f"{field}.max_count")
+        if trigger_type == "roi_batch_removed":
+            for key in ("count_stable_frames", "empty_stable_frames"):
+                value = trigger.get(key, 2)
+                if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                    _fail(f"{key}必须是正整数", f"{field}.{key}")
         return
 
     if trigger_type == "object_event":
@@ -233,6 +343,53 @@ def _validate_class_reference(
     class_name = _require_text(trigger, "class_name", f"{field}.class_name")
     if class_name not in class_names:
         _fail(f"步骤引用了未定义类别: {class_name}", f"{field}.class_name")
+
+
+def _validate_class_group_reference(
+    trigger: dict[str, Any],
+    class_names: set[str],
+    field: str,
+) -> None:
+    if trigger.get("class_name"):
+        _validate_class_reference(trigger, class_names, field)
+        if trigger.get("class_names") is not None:
+            _fail("class_name 和 class_names 不能同时使用", field)
+        return
+    values = trigger.get("class_names")
+    if (
+        not isinstance(values, list)
+        or not values
+        or not all(isinstance(value, str) and value.strip() for value in values)
+    ):
+        _fail("object_count 必须提供 class_name 或非空 class_names", f"{field}.class_names")
+    if len(set(values)) != len(values):
+        _fail("class_names 不能包含重复类别", f"{field}.class_names")
+    unknown = sorted(set(values) - class_names)
+    if unknown:
+        _fail(f"步骤引用了未定义类别: {', '.join(unknown)}", f"{field}.class_names")
+
+
+def _validate_evidence(evidence: Any, field: str) -> None:
+    if evidence is None:
+        return
+    if not isinstance(evidence, dict):
+        _fail("evidence必须是对象", field)
+    evidence_type = evidence.get("type", "bbox")
+    if evidence_type not in {"bbox", "mask", "keypoints"}:
+        _fail("evidence.type只支持bbox、mask或keypoints", f"{field}.type")
+    if evidence_type == "mask":
+        overlap = evidence.get("min_roi_overlap", 0.35)
+        if not isinstance(overlap, (int, float)) or not 0 <= float(overlap) <= 1:
+            _fail("min_roi_overlap必须位于0到1", f"{field}.min_roi_overlap")
+    if evidence_type == "keypoints":
+        indices = evidence.get("indices", [])
+        if not isinstance(indices, list) or not all(
+            isinstance(index, int) and index >= 0 for index in indices
+        ):
+            _fail("keypoints.indices必须是非负整数数组", f"{field}.indices")
+        score = evidence.get("min_keypoint_score", 0.0)
+        if not isinstance(score, (int, float)) or not 0 <= float(score) <= 1:
+            _fail("min_keypoint_score必须位于0到1", f"{field}.min_keypoint_score")
 
 
 def _validate_roi_reference(

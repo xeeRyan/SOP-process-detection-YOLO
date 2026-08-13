@@ -1,7 +1,7 @@
 # SOP 项目目录
 
-每一种 SOP 使用一个独立目录。运行时通过 `sop_project_dir` 选择项目；未指定时加载
-`SK_DEMO`。
+每一种 SOP 使用一个独立目录。运行时必须通过 `sop_project_dir` 显式选择项目，避免
+隐式加载错误的流程配置。
 
 ## 必需文件
 
@@ -16,7 +16,35 @@
 - `rois.json`：操作区域，推荐使用 `normalized` 的 0～1 坐标。
 - `workflow.json`：有序步骤和触发条件。
 
-第一版触发器支持 `object_in_roi`、`object_present` 和 `hand_in_roi`。
+当前触发器支持 `object_in_roi`、`object_present`、`hand_in_roi`，并可通过
+`evidence` 配置 ROI 重叠、关键点和时序稳定性约束。模型任务由
+`active_model_task` 和 `model_profiles` 声明，检测、分割和姿态模型按需加载。
+
+流程还可以声明与业务无关的属性序列约束，用于正反、左右、姿态等多轴交替规则。
+第一项默认可通过 `initial: "auto"` 随机初始化；批次切换步骤可通过
+`constraints.batch_policy.reset_sequence_on_step_ids` 重置序列。
+
+```json
+{
+  "constraints": {
+    "attribute_sequences": [
+      {
+        "id": "placement_attributes",
+        "class_name": "item",
+        "roi_id": "stack",
+        "event": "object_enter_roi",
+        "axes": [
+          {"attribute": "surface", "values": ["state_a", "state_b"]},
+          {"attribute": "direction", "values": ["side_a", "side_b"]}
+        ]
+      }
+    ],
+    "batch_policy": {
+      "reset_sequence_on_step_ids": ["batch_2_start"]
+    }
+  }
+}
+```
 
 ## 导入视频与抽帧
 
@@ -49,7 +77,7 @@
   "command": "import_annotations",
   "params": {
     "sop_project_dir": "projects/SK_DEMO",
-    "labels_dir": "D:\\external_annotations\\labels",
+    "labels_dir": "data/labels",
     "overwrite": true,
     "mark_missing_as_empty": false
   }
@@ -111,7 +139,8 @@
 训练运行目录为 `runs/<model_id>_<version>/`，正式模型写入
 `models/<model_id>/<version>/`。`model_manifest.json` 记录数据集版本、基础模型、训练参数、
 验证指标和导出文件。启用 `set_active` 后，`project.json` 的 `active_model` 会更新，后续检测
-请求不传 `model_path` 时自动使用该版本。
+请求不传 `model_path` 时自动使用该版本。多任务项目可在 `model_profiles` 中为
+`detect`、`segment` 和 `pose` 分别登记模型，运行时只加载当前流程需要的任务。
 
 ## 项目创建和配置
 

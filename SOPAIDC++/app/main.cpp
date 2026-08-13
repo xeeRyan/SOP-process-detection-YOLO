@@ -21,10 +21,10 @@ namespace {
 
 // 默认输出位置对齐 Python 交付包结构：
 // 每次测试结果放在 outputs 下的新建文件夹，日志统一放在 outputs/logs。
-const char* kDefaultOutputRoot = "E:/Project/SOPAID/SOPAID/dist/SOP_PYD/outputs";
-const char* kDefaultLogDir = "E:/Project/SOPAID/SOPAID/outputs/logs";
-const char* kDefaultPalmModelPath = "E:/Project/SOPAID/SOPAID/dist/SOP_PYD/models/palm_detection_mediapipe_2023feb.onnx";
-const char* kDefaultHandPoseModelPath = "E:/Project/SOPAID/SOPAID/dist/SOP_PYD/models/handpose_estimation_mediapipe_2023feb.onnx";
+const char* kDefaultOutputRoot = "outputs";
+const char* kDefaultLogDir = "outputs/logs";
+const char* kDefaultPalmModelPath = "models/palm_detection_mediapipe_2023feb.onnx";
+const char* kDefaultHandPoseModelPath = "models/handpose_estimation_mediapipe_2023feb.onnx";
 
 SopAidModelFormat inferFormatFromPath(const std::string& model_path);
 
@@ -33,11 +33,11 @@ SopAidModelFormat inferFormatFromPath(const std::string& model_path);
 struct SopAidRequestConfig {
     // 每次运行需要调整的参数统一在这里修改。
     std::string model_path =
-        "E:/Project/SOPAID/SOPAID/dist/SOP_PYD/models/best_yolo26n.torchscript";
+        "models/best_yolo26n.torchscript";
     std::string video_path =
-        "E:/Project/SOPAID/SOPAID/videos/sk.mp4";
+        "videos/sk.mp4";
     std::filesystem::path output_root =
-        "E:/Project/SOPAID/SOPAID/outputs";
+        "outputs";
     std::string palm_model_path = kDefaultPalmModelPath;
     std::string handpose_model_path = kDefaultHandPoseModelPath;
     std::string class_names_csv = "bearing,cover,tool";

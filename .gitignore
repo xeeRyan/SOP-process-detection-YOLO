@@ -12,6 +12,10 @@ dist/
 .venv/
 .uv-cache/
 .test-tmp/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
 .idea/
 .vscode/
 .vs/
@@ -19,12 +23,8 @@ dist/
 *.user
 *.user.props
 !*.user.props.template
-cpp_sopaid_dll/SopAidInfer.user.props
 
 # C/C++ and Visual Studio build outputs
-cpp_sopaid_dll/bin/
-cpp_sopaid_dll/obj/
-cpp_sopaid_dll/x64/
 frontend/**/bin/
 frontend/**/obj/
 *.obj

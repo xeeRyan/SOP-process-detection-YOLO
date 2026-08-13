@@ -13,7 +13,6 @@ from scripts.project import load_sop_project
 from scripts.project.storage import read_json_object, resolve_within, utc_now, write_json_atomic
 from scripts.utils import ensure_dir
 
-
 SPLIT_NAMES = ("train", "val", "test")
 ELIGIBLE_STATUSES = {"labeled", "reviewed_empty"}
 

@@ -12,7 +12,6 @@ if __package__ is None or __package__ == "":
     sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from scripts.config import ROOT
-from scripts.legacy_sk_config import DEFAULT_VIDEO_PATH
 from scripts.utils import ensure_dir
 
 
@@ -21,7 +20,7 @@ DEFAULT_OUTPUT_DIR = ROOT / "datasets" / "sop" / "raw_frames"
 
 # 数据集准备入口：从视频中按固定频率抽取标注图片。
 def extract_frames(
-    video_path: str | Path = DEFAULT_VIDEO_PATH,
+    video_path: str | Path,
     output_dir: str | Path = DEFAULT_OUTPUT_DIR,
     frames_per_second: float = 2.0,
     max_frames: int = 300,
@@ -76,7 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     """构建抽帧脚本的命令行参数。"""
 
     parser = argparse.ArgumentParser(description="从视频抽取 YOLO 标注图片")
-    parser.add_argument("--video", default=str(DEFAULT_VIDEO_PATH), help="输入视频路径，默认 videos/sk.mp4")
+    parser.add_argument("--video", required=True, help="输入视频路径")
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT_DIR), help="输出图片目录")
     parser.add_argument("--fps", type=float, default=2.0, help="每秒抽取多少张图片")
     parser.add_argument("--max-frames", type=int, default=300, help="最多保存多少张，0 表示不限制")

@@ -5,6 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable, Sequence
 
+import cv2
+import numpy as np
+
 
 # 检测框几何工具：计算 bbox 中心点。
 def bbox_center(bbox: Sequence[float]) -> tuple[float, float]:
@@ -47,3 +50,25 @@ def labels_in_roi(detections: Iterable, roi: Sequence[int]) -> set[str]:
         for detection in detections
         if bbox_center_in_roi(detection.bbox, roi)
     }
+
+
+def mask_roi_overlap(mask: Sequence[Sequence[float]] | None, roi: Sequence[int]) -> float:
+    """Return the fraction of a segmentation polygon covered by ``roi``."""
+
+    if not mask or len(mask) < 3:
+        return 0.0
+    points = np.asarray(mask, dtype=np.float32)
+    if points.ndim != 2 or points.shape[1] != 2:
+        return 0.0
+    x1, y1, x2, y2 = [max(0, int(round(value))) for value in roi]
+    max_x = max(x2, int(np.ceil(points[:, 0].max()))) + 1
+    max_y = max(y2, int(np.ceil(points[:, 1].max()))) + 1
+    if max_x <= 1 or max_y <= 1:
+        return 0.0
+    canvas = np.zeros((max_y, max_x), dtype=np.uint8)
+    cv2.fillPoly(canvas, [np.round(points).astype(np.int32)], 1)
+    total = int(canvas.sum())
+    if total <= 0:
+        return 0.0
+    intersection = int(canvas[y1:y2, x1:x2].sum())
+    return intersection / total

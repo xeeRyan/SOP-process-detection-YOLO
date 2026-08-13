@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from scripts.detector import Detection
+from scripts.inference import Detection
 from scripts.events import SopEventEngine
 from scripts.project.schema_validator import ProjectValidationError, validate_workflow
 from scripts.sop_logic import SOPStateMachine
@@ -83,6 +83,30 @@ class AdvancedTriggerTests(unittest.TestCase):
         machine.update([first, second], 1, 0.04)
         self.assertEqual(machine.final_result, "OK")
 
+    def test_object_count_supports_multiple_classes(self) -> None:
+        machine = SOPStateMachine(
+            workflow=workflow_with(
+                {
+                    "type": "object_count",
+                    "class_names": ["glove_front", "glove_back"],
+                    "roi_id": "work",
+                    "min_count": 3,
+                    "max_count": 3,
+                    "stable_frames": 1,
+                }
+            ),
+            rois=ROIS,
+        )
+        detections = [
+            Detection("glove_front", 0.9, [45, 10, 50, 15], track_id=1),
+            Detection("glove_back", 0.9, [55, 10, 60, 15], track_id=2),
+            Detection("glove_front", 0.9, [65, 10, 70, 15], track_id=3),
+        ]
+
+        machine.update(detections, 0, 0.0)
+
+        self.assertEqual(machine.final_result, "OK")
+
     def test_cross_roi_transition_uses_same_track(self) -> None:
         machine = SOPStateMachine(
             workflow=workflow_with(
@@ -131,6 +155,61 @@ class AdvancedTriggerTests(unittest.TestCase):
         machine.update([tool], 4, 1.6)
         self.assertEqual(machine.final_result, "OK")
 
+    def test_roi_batch_removed_counts_unique_tracks_then_requires_clear_frames(self) -> None:
+        machine = SOPStateMachine(
+            workflow=workflow_with(
+                {
+                    "type": "roi_batch_removed",
+                    "class_names": ["glove_front", "glove_back"],
+                    "roi_id": "work",
+                    "min_count": 2,
+                    "count_stable_frames": 2,
+                    "empty_stable_frames": 2,
+                    "stable_frames": 1,
+                }
+            ),
+            rois=ROIS,
+        )
+        front = Detection("glove_front", 0.9, [45, 10, 50, 15], track_id=1)
+        back = Detection("glove_back", 0.9, [55, 10, 60, 15], track_id=2)
+
+        machine.update([front], 0, 0.0)
+        machine.update([front], 1, 0.04)
+        machine.update([front, back], 2, 0.08)
+        machine.update([front, back], 3, 0.12)
+        self.assertEqual(machine.steps[0].status, "pending")
+        self.assertEqual(machine.counter_summaries["step"]["count"], 2)
+
+        machine.update([], 4, 0.16)
+        self.assertEqual(machine.steps[0].status, "pending")
+        machine.update([], 5, 0.20)
+
+        self.assertEqual(machine.final_result, "OK")
+        self.assertEqual(machine.counter_summaries["step"]["status"], "removed")
+
+    def test_roi_batch_removed_rejects_completion_before_minimum_count(self) -> None:
+        machine = SOPStateMachine(
+            workflow=workflow_with(
+                {
+                    "type": "roi_batch_removed",
+                    "class_name": "part",
+                    "roi_id": "work",
+                    "min_count": 2,
+                    "count_stable_frames": 1,
+                    "empty_stable_frames": 1,
+                    "stable_frames": 1,
+                }
+            ),
+            rois=ROIS,
+        )
+        part = Detection("part", 0.9, [45, 10, 50, 15], track_id=1)
+
+        machine.update([part], 0, 0.0)
+        machine.update([], 1, 0.04)
+
+        self.assertEqual(machine.steps[0].status, "pending")
+        self.assertEqual(machine.counter_summaries["step"]["count"], 1)
+
     def test_schema_validates_nested_triggers(self) -> None:
         workflow = workflow_with(
             {
@@ -155,6 +234,16 @@ class AdvancedTriggerTests(unittest.TestCase):
             }
         )
         validate_workflow(workflow, {"part", "tool"}, set(ROIS))
+
+        group_workflow = workflow_with(
+            {
+                "type": "object_count",
+                "class_names": ["part", "tool"],
+                "roi_id": "work",
+                "min_count": 1,
+            }
+        )
+        validate_workflow(group_workflow, {"part", "tool"}, set(ROIS))
 
         workflow["steps"][0]["trigger"]["operator"] = "invalid"
         with self.assertRaises(ProjectValidationError):

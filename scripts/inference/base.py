@@ -15,6 +15,7 @@ class DetectorBackend(ABC):
 
     backend_name = "unknown"
     runtime_name = "unknown"
+    task = "detect"
     device: str | int | None = None
 
     @abstractmethod
@@ -25,6 +26,7 @@ class DetectorBackend(ABC):
         return {
             "backend": self.backend_name,
             "runtime": self.runtime_name,
+            "task": self.task,
             "device": self.device,
         }
 

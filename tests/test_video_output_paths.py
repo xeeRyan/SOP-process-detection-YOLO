@@ -3,7 +3,12 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from scripts.main_video import _build_temporary_video_path, _should_run_hand_pose
+from scripts.main_video import (
+    _build_temporary_video_path,
+    _should_run_hand_pose,
+    _should_run_vision,
+    _trigger_requires_hand_pose,
+)
 
 
 class VideoOutputPathTests(unittest.TestCase):
@@ -24,3 +29,22 @@ class VideoOutputPathTests(unittest.TestCase):
         self.assertEqual(sampled, [0, 3, 6, 9])
         with self.assertRaises(ValueError):
             _should_run_hand_pose(0, 0)
+
+    def test_vision_inference_interval_is_applied(self) -> None:
+        sampled = [frame for frame in range(7) if _should_run_vision(frame, 2)]
+
+        self.assertEqual(sampled, [0, 2, 4, 6])
+        with self.assertRaises(ValueError):
+            _should_run_vision(0, 0)
+
+    def test_hand_pose_is_required_only_by_active_trigger(self) -> None:
+        self.assertFalse(_trigger_requires_hand_pose({"type": "object_in_roi"}))
+        self.assertTrue(_trigger_requires_hand_pose({"type": "hand_in_roi"}))
+        self.assertTrue(
+            _trigger_requires_hand_pose(
+                {
+                    "type": "composite",
+                    "conditions": [{"type": "object_in_roi", "allow_hand_pose": True}],
+                }
+            )
+        )

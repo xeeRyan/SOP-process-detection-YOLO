@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -18,7 +19,7 @@ DEFAULT_IMAGE_PATH = ROOT / "datasets" / "sop" / "raw_frames" / "frame_000050.jp
 DEFAULT_SCALE = 0.4
 
 
-# 交互式 ROI 选择工具，用于生成 config.py 中的三个业务区域。
+# 交互式 ROI 选择工具，用于生成项目 rois.json 中的三个业务区域。
 def select_roi(image_path: str | Path = DEFAULT_IMAGE_PATH, scale: float = DEFAULT_SCALE) -> None:
     """交互式选择 SOP 判定 ROI。
 
@@ -27,7 +28,7 @@ def select_roi(image_path: str | Path = DEFAULT_IMAGE_PATH, scale: float = DEFAU
     - scale: 预览窗口缩放比例。
 
     输出：
-    - 在终端打印 WORK_ROI、SCREW_BIN_ROI、TOOL_HOME_ROI，可复制到 config.py。
+    - 在终端打印 project ROI 坐标，便于写入项目 rois.json。
     """
 
     image_path = Path(image_path)
@@ -44,17 +45,17 @@ def select_roi(image_path: str | Path = DEFAULT_IMAGE_PATH, scale: float = DEFAU
     print("操作说明:")
     print(f"原图尺寸: {image.shape[1]}x{image.shape[0]}")
     print(f"显示缩放: {scale}")
-    print("1. 先框选装配区 WORK_ROI，按 Enter/Space 确认。")
-    print("2. 再框选螺丝盘区 SCREW_BIN_ROI，按 Enter/Space 确认。")
-    print("3. 最后框选工具原位区 TOOL_HOME_ROI，按 Enter/Space 确认。")
+    print("1. 先框选装配区 work，按 Enter/Space 确认。")
+    print("2. 再框选螺丝盘区 screw_bin，按 Enter/Space 确认。")
+    print("3. 最后框选工具原位区 tool_home，按 Enter/Space 确认。")
     print("4. 框选错误时按 c 取消当前选择。")
 
-    work = cv2.selectROI("Select WORK_ROI", display, showCrosshair=True, fromCenter=False)
-    cv2.destroyWindow("Select WORK_ROI")
-    screw_bin = cv2.selectROI("Select SCREW_BIN_ROI", display, showCrosshair=True, fromCenter=False)
-    cv2.destroyWindow("Select SCREW_BIN_ROI")
-    tool_home = cv2.selectROI("Select TOOL_HOME_ROI", display, showCrosshair=True, fromCenter=False)
-    cv2.destroyWindow("Select TOOL_HOME_ROI")
+    work = cv2.selectROI("Select work", display, showCrosshair=True, fromCenter=False)
+    cv2.destroyWindow("Select work")
+    screw_bin = cv2.selectROI("Select screw_bin", display, showCrosshair=True, fromCenter=False)
+    cv2.destroyWindow("Select screw_bin")
+    tool_home = cv2.selectROI("Select tool_home", display, showCrosshair=True, fromCenter=False)
+    cv2.destroyWindow("Select tool_home")
 
     # selectROI 在缩放图上取值，需要还原到原始视频坐标。
     work_roi = _scale_roi(_xywh_to_xyxy(work), scale)
@@ -62,10 +63,28 @@ def select_roi(image_path: str | Path = DEFAULT_IMAGE_PATH, scale: float = DEFAU
     tool_home_roi = _scale_roi(_xywh_to_xyxy(tool_home), scale)
 
     print()
-    print("复制到 scripts/config.py:")
-    print(f"WORK_ROI = {work_roi}")
-    print(f"SCREW_BIN_ROI = {screw_bin_roi}")
-    print(f"TOOL_HOME_ROI = {tool_home_roi}")
+    print("请将以下内容写入项目的 rois.json:")
+    print(
+        json.dumps(
+            {
+                "coordinate_type": "pixel",
+                "regions": [
+                    {"id": "work", "name": "主工作区", "shape": "rectangle", "points": _roi_points(work_roi)},
+                    {"id": "screw_bin", "name": "螺丝盘", "shape": "rectangle", "points": _roi_points(screw_bin_roi)},
+                    {"id": "tool_home", "name": "工具归位区", "shape": "rectangle", "points": _roi_points(tool_home_roi)},
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
+def _roi_points(roi: list[int]) -> list[list[int]]:
+    """将矩形边界转换为项目 ROI 所需的左上、右下两点。"""
+
+    x1, y1, x2, y2 = roi
+    return [[x1, y1], [x2, y2]]
 
 
 # OpenCV selectROI 返回 x/y/w/h，业务配置使用 x1/y1/x2/y2。

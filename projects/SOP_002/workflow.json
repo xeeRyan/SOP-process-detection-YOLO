@@ -1,7 +1,125 @@
 {
   "schema_version": "1.0",
-  "workflow_id": "SOP_002_V1",
-  "name": "新装配流程流程",
-  "version": "1.0.0",
-  "steps": []
+  "workflow_id": "glove_stack_pack_v2",
+  "name": "手套两批堆叠包装流程",
+  "version": "1.1.0",
+  "steps": [
+    {
+      "id": "batch_1_complete",
+      "order": 1,
+      "name": "第一堆移出堆叠区后完成",
+      "required": true,
+      "timeout_sec": 300,
+      "trigger": {
+        "type": "roi_batch_removed",
+        "class_names": ["glove_front", "glove_back"],
+        "roi_id": "stack_area",
+        "min_count": 2,
+        "confidence": 0.5,
+        "count_stable_frames": 3,
+        "empty_stable_frames": 12,
+        "stable_frames": 1,
+        "allow_hand_pose": true
+      }
+    },
+    {
+      "id": "batch_2_complete",
+      "order": 2,
+      "name": "第二堆移出堆叠区后完成",
+      "required": true,
+      "timeout_sec": 300,
+      "trigger": {
+        "type": "roi_batch_removed",
+        "class_names": ["glove_front", "glove_back"],
+        "roi_id": "stack_area",
+        "min_count": 2,
+        "confidence": 0.5,
+        "count_stable_frames": 3,
+        "empty_stable_frames": 12,
+        "stable_frames": 1,
+        "allow_hand_pose": true
+      }
+    },
+    {
+      "id": "two_batches_merged",
+      "order": 3,
+      "name": "两堆手套合并至包装区",
+      "required": true,
+      "timeout_sec": 180,
+      "trigger": {
+        "type": "composite",
+        "allow_hand_pose": true,
+        "operator": "any",
+        "stable_frames": 8,
+        "conditions": [
+          {
+            "type": "object_count",
+            "class_name": "glove_front",
+            "roi_id": "side_pack_area",
+            "min_count": 1
+          },
+          {
+            "type": "object_count",
+            "class_name": "glove_back",
+            "roi_id": "side_pack_area",
+            "min_count": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "plastic_bag_ready",
+      "order": 4,
+      "name": "塑料包装袋位于包装区",
+      "required": true,
+      "timeout_sec": 120,
+      "trigger": {
+        "type": "object_in_roi",
+        "allow_hand_pose": true,
+        "class_name": "plastic_bag",
+        "roi_id": "side_pack_area",
+        "confidence": 0.5,
+        "stable_frames": 8
+      }
+    },
+    {
+      "id": "package_complete",
+      "order": 5,
+      "name": "手套装袋完成",
+      "required": true,
+      "timeout_sec": 180,
+      "trigger": {
+        "type": "composite",
+        "allow_hand_pose": true,
+        "operator": "all",
+        "stable_frames": 15,
+        "conditions": [
+          {
+            "type": "object_in_roi",
+            "class_name": "plastic_bag",
+            "roi_id": "side_pack_area",
+            "confidence": 0.5
+          },
+          {
+            "type": "composite",
+            "operator": "any",
+            "conditions": [
+              {
+                "type": "object_count",
+                "class_name": "glove_front",
+                "roi_id": "side_pack_area",
+                "min_count": 1
+              },
+              {
+                "type": "object_count",
+                "class_name": "glove_back",
+                "roi_id": "side_pack_area",
+                "min_count": 1
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }

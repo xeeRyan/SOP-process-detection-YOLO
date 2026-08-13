@@ -20,10 +20,11 @@ from scripts.config import (
     DEFAULT_TCP_HOST,
     DEFAULT_TCP_PORT,
     ENABLE_HAND_POSE,
+    HAND_POSE_ACTIVE_STEP_ONLY,
     HAND_POSE_SAMPLE_INTERVAL,
+    VISION_INFERENCE_INTERVAL_FRAMES,
     ROOT,
 )
-from scripts.legacy_sk_config import DEFAULT_MODEL_PATH, DEFAULT_SOP_PROJECT_DIR, DEFAULT_VIDEO_PATH
 from scripts.project.storage import read_json_object, resolve_within
 
 
@@ -211,7 +212,7 @@ def run_extract_frames(dict_data: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(raw_paths, list) or not raw_paths:
         raise ValueError("extract_frames 需要 video_paths 或 video_path")
 
-    project_dir = resolve_project_path(params.get("sop_project_dir")) or DEFAULT_SOP_PROJECT_DIR
+    project_dir = _required_project_dir(dict_data)
     video_paths = [resolve_project_path(path) for path in raw_paths]
     return extract_project_videos(
         project_dir=project_dir,
@@ -233,7 +234,7 @@ def run_import_annotations(dict_data: dict[str, Any]) -> dict[str, Any]:
     labels_dir = resolve_project_path(params.get("labels_dir"))
     if labels_dir is None:
         raise ValueError("import_annotations 需要 labels_dir")
-    project_dir = resolve_project_path(params.get("sop_project_dir")) or DEFAULT_SOP_PROJECT_DIR
+    project_dir = _required_project_dir(dict_data)
     return import_yolo_annotations(
         project_dir=project_dir,
         labels_dir=labels_dir,
@@ -248,7 +249,7 @@ def run_build_dataset(dict_data: dict[str, Any]) -> dict[str, Any]:
     from tools.dataset_builder import build_yolo_dataset
 
     params = dict_data.get("params", dict_data)
-    project_dir = resolve_project_path(params.get("sop_project_dir")) or DEFAULT_SOP_PROJECT_DIR
+    project_dir = _required_project_dir(dict_data)
     return build_yolo_dataset(
         project_dir=project_dir,
         dataset_name=params.get("dataset_name"),
@@ -274,7 +275,7 @@ def run_train_project(dict_data: dict[str, Any]) -> dict[str, Any]:
     model_id = str(params.get("model_id") or "")
     if not dataset_name or not model_id:
         raise ValueError("train_project 需要 dataset_name 和 model_id")
-    project_dir = resolve_project_path(params.get("sop_project_dir")) or DEFAULT_SOP_PROJECT_DIR
+    project_dir = _required_project_dir(dict_data)
     base_model = resolve_project_path(params.get("base_model_path"))
     return train_project_model(
         project_dir=project_dir,
@@ -297,7 +298,7 @@ def run_convert_project_model(dict_data: dict[str, Any]) -> dict[str, Any]:
     model_version = str(params.get("model_version") or "")
     if not model_id or not model_version:
         raise ValueError("convert_project_model 需要 model_id 和 model_version")
-    project_dir = resolve_project_path(params.get("sop_project_dir")) or DEFAULT_SOP_PROJECT_DIR
+    project_dir = _required_project_dir(dict_data)
     return convert_project_model(
         project_dir=project_dir,
         model_id=model_id,
@@ -317,14 +318,15 @@ def run_detect(dict_data: dict[str, Any]) -> dict[str, Any]:
     ai_config = config.get("ai", {})
     output_config = config.get("output", {})
     hand_pose_config = config.get("hand_pose", {})
+    vision_config = config.get("vision", {})
     tracking_config = config.get("tracking", {})
     sop_config = config.get("sop", {})
 
     params = dict_data.get("params", dict_data)
-    sop_project_dir = resolve_project_path(
-        params.get("sop_project_dir"),
-        paths_config.get("sop_project_dir"),
-    ) or DEFAULT_SOP_PROJECT_DIR
+    sop_project_dir = _required_project_dir(dict_data)
+    video_path = resolve_project_path(params.get("video_path"))
+    if video_path is None:
+        raise ValueError("detect请求必须显式提供 video_path")
     requested_model = params.get("model_path")
     model_path = resolve_project_path(requested_model) if requested_model not in (None, "") else None
     output_dir = resolve_detect_output_dir(
@@ -332,7 +334,7 @@ def run_detect(dict_data: dict[str, Any]) -> dict[str, Any]:
         params.get("output_dir", paths_config.get("output_dir", "outputs/frontend_detect")),
     )
     return process_video(
-        video_path=resolve_project_path(params.get("video_path"), paths_config.get("video_path")) or DEFAULT_VIDEO_PATH,
+        video_path=video_path,
         model_path=model_path,
         output_dir=output_dir,
         enable_hand_pose=params.get("enable_hand_pose", hand_pose_config.get("enabled", ENABLE_HAND_POSE)),
@@ -347,11 +349,38 @@ def run_detect(dict_data: dict[str, Any]) -> dict[str, Any]:
                 hand_pose_config.get("sample_interval", HAND_POSE_SAMPLE_INTERVAL),
             )
         ),
+        hand_pose_active_step_only=bool(
+            params.get(
+                "hand_pose_active_step_only",
+                hand_pose_config.get("active_step_only", HAND_POSE_ACTIVE_STEP_ONLY),
+            )
+        ),
+        vision_inference_interval_frames=int(
+            params.get(
+                "vision_inference_interval_frames",
+                vision_config.get("inference_interval_frames", VISION_INFERENCE_INTERVAL_FRAMES),
+            )
+        ),
         tracking_iou_threshold=float(
             params.get("tracking_iou_threshold", tracking_config.get("iou_threshold", 0.2))
         ),
         tracking_max_missing_frames=int(
             params.get("tracking_max_missing_frames", tracking_config.get("max_missing_frames", 8))
+        ),
+        tracking_min_confirmed_hits=int(
+            params.get("tracking_min_confirmed_hits", tracking_config.get("min_confirmed_hits", 1))
+        ),
+        tracking_low_confidence=float(
+            params.get("tracking_low_confidence", tracking_config.get("low_confidence", 0.1))
+        ),
+        tracking_new_track_confidence=float(
+            params.get("tracking_new_track_confidence", tracking_config.get("new_track_confidence", 0.6))
+        ),
+        tracking_second_match_iou_threshold=float(
+            params.get(
+                "tracking_second_match_iou_threshold",
+                tracking_config.get("second_match_iou_threshold", 0.2),
+            )
         ),
         event_lost_tolerance_frames=int(
             params.get(
@@ -359,9 +388,25 @@ def run_detect(dict_data: dict[str, Any]) -> dict[str, Any]:
                 tracking_config.get("event_lost_tolerance_frames", 8),
             )
         ),
+        event_enter_stable_frames=int(
+            params.get(
+                "event_enter_stable_frames",
+                tracking_config.get("event_enter_stable_frames", 2),
+            )
+        ),
+        event_exit_stable_frames=int(
+            params.get(
+                "event_exit_stable_frames",
+                tracking_config.get("event_exit_stable_frames", 2),
+            )
+        ),
         enable_yolo=params.get("enable_yolo", ai_config.get("enable_yolo", DEFAULT_ENABLE_YOLO)),
-        confidence_threshold=params.get("confidence_threshold", ai_config.get("confidence_threshold", CONFIDENCE_THRESHOLD)),
-        nms_threshold=params.get("nms_threshold", ai_config.get("nms_threshold", DEFAULT_NMS_THRESHOLD)),
+        confidence_threshold=float(
+            params.get("confidence_threshold", ai_config.get("confidence_threshold", CONFIDENCE_THRESHOLD))
+        ),
+        nms_threshold=float(
+            params.get("nms_threshold", ai_config.get("nms_threshold", DEFAULT_NMS_THRESHOLD))
+        ),
         inference_device=params.get("inference_device"),
         inference_backend=params.get("inference_backend", ai_config.get("inference_backend", "python")),
         target_classes=params.get("target_classes"),
@@ -414,7 +459,9 @@ def run_train(dict_data: dict[str, Any]) -> dict[str, Any]:
         images_dir=resolve_project_path(params.get("images_dir"), train_config.get("images_dir")),
         labels_dir=resolve_project_path(params.get("labels_dir"), train_config.get("labels_dir")),
         dataset_output_dir=resolve_project_path(params.get("dataset_output_dir"), train_config.get("dataset_output_dir")),
-        copy_best_to=resolve_project_path(params.get("copy_best_to"), train_config.get("copy_best_to")) or DEFAULT_MODEL_PATH,
+        copy_best_to=resolve_project_path(
+            params.get("copy_best_to"), train_config.get("copy_best_to")
+        ) or APP_ROOT / "models" / "best_yolo26s.pt",
         exist_ok=bool(params.get("exist_ok", train_config.get("exist_ok", True))),
         hsv_h=params.get("hsv_h", train_config.get("hsv_h")),
         hsv_s=params.get("hsv_s", train_config.get("hsv_s")),

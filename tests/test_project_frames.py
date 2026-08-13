@@ -7,7 +7,8 @@ import unittest
 from pathlib import Path
 
 from scripts.config import ROOT
-from scripts.legacy_sk_config import DEFAULT_SOP_PROJECT_DIR
+
+DEFAULT_SOP_PROJECT_DIR = Path(__file__).resolve().parents[1] / "projects" / "SK_DEMO"
 from task_dispatcher import run_task
 from tools.project_frames import extract_project_videos
 

@@ -2,15 +2,20 @@ from __future__ import annotations
 
 import unittest
 
-from scripts.detector import Detection
+from scripts.inference import Detection
 from scripts.events import SopEventEngine
 from scripts.sop_logic import SOPStateMachine
-from scripts.tracking import SimpleObjectTracker
+from scripts.tracking import ByteTrackTracker
 
 
 class TrackingEventTests(unittest.TestCase):
     def test_tracker_preserves_id_and_event_engine_emits_roi_transition(self) -> None:
-        tracker = SimpleObjectTracker(iou_threshold=0.1)
+        tracker = ByteTrackTracker(
+            high_confidence=0.5,
+            low_confidence=0.1,
+            new_track_confidence=0.6,
+            iou_threshold=0.1,
+        )
         events = SopEventEngine({"work": [50, 0, 100, 100]})
 
         first = tracker.update([Detection("part", 0.9, [0, 10, 40, 30])])
@@ -88,3 +93,45 @@ class TrackingEventTests(unittest.TestCase):
     def test_negative_lost_tolerance_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
             SopEventEngine({}, lost_tolerance_frames=-1)
+
+    def test_enter_event_requires_consecutive_confirmations(self) -> None:
+        engine = SopEventEngine(
+            {"work": [50, 0, 100, 100]},
+            enter_stable_frames=2,
+        )
+        outside = Detection("part", 0.9, [0, 10, 20, 30], track_id=1)
+        inside = Detection("part", 0.9, [60, 10, 80, 30], track_id=1)
+
+        engine.update([outside], 0, 0.0)
+        first_inside = engine.update([inside], 1, 0.04)
+        interrupted = engine.update([outside], 2, 0.08)
+        second_inside = engine.update([inside], 3, 0.12)
+        confirmed = engine.update([inside], 4, 0.16)
+
+        self.assertNotIn("object_enter_roi", [event.event_type for event in first_inside])
+        self.assertNotIn("object_enter_roi", [event.event_type for event in interrupted])
+        self.assertNotIn("object_enter_roi", [event.event_type for event in second_inside])
+        self.assertIn("object_enter_roi", [event.event_type for event in confirmed])
+
+    def test_exit_event_requires_consecutive_confirmations(self) -> None:
+        engine = SopEventEngine(
+            {"work": [50, 0, 100, 100]},
+            exit_stable_frames=2,
+        )
+        inside = Detection("part", 0.9, [60, 10, 80, 30], track_id=1)
+        outside = Detection("part", 0.9, [0, 10, 20, 30], track_id=1)
+
+        engine.update([inside], 0, 0.0)
+        first_exit = engine.update([outside], 1, 0.04)
+        recovered = engine.update([inside], 2, 0.08)
+        second_exit = engine.update([outside], 3, 0.12)
+        confirmed = engine.update([outside], 4, 0.16)
+
+        self.assertNotIn("object_exit_roi", [event.event_type for event in first_exit])
+        self.assertNotIn("object_exit_roi", [event.event_type for event in recovered])
+        self.assertNotIn("object_exit_roi", [event.event_type for event in second_exit])
+        self.assertIn("object_exit_roi", [event.event_type for event in confirmed])
+
+    def test_invalid_event_stability_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            SopEventEngine({}, enter_stable_frames=0)

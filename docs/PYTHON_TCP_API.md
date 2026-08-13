@@ -273,15 +273,11 @@ close
 {
   "command": "detect",
   "params": {
+    "sop_project_dir": "projects/SK_DEMO",
     "video_path": "videos/sk.mp4",
-    "model_path": "models/best_yolo26s.pt",
     "output_dir": "outputs/yolo26s",
     "confidence_threshold": 0.25,
     "nms_threshold": 0.7,
-    "target_classes": ["bearing", "cover", "tool"],
-    "work_roi": [1115, 1132, 1648, 1522],
-    "screw_bin_roi": [1092, 505, 1410, 932],
-    "tool_home_roi": [782, 508, 1108, 930],
     "enable_yolo": true,
     "enable_hand_pose": true,
     "hand_pose_model_path": "models/hand_landmarker.task",
@@ -296,18 +292,18 @@ close
 
 | 字段 | 含义 |
 | --- | --- |
-| `video_path` | 输入视频路径。 |
-| `model_path` | 检测使用的 YOLO `.pt` 模型路径。 |
+| `sop_project_dir` | 必填，SOP 项目目录；模型、类别、ROI 和工作流从项目读取。 |
+| `video_path` | 必填，输入视频路径。 |
+| `model_path` | 可选，显式覆盖项目活动模型路径。 |
 | `output_dir` | 检测结果输出目录。 |
 | `confidence_threshold` | 置信度阈值。 |
 | `nms_threshold` | NMS IoU 阈值。 |
-| `target_classes` | 保留的检测类别，当前 SOP 类别为 `bearing`、`cover`、`tool`。 |
-| `work_roi` | 主工作区域 ROI，格式 `[x1, y1, x2, y2]`。 |
-| `screw_bin_roi` | 螺丝/物料区域 ROI。 |
-| `tool_home_roi` | 工具初始/归位区域 ROI。 |
+| `target_classes` | 可选，只能是项目已定义类别的子集；默认使用项目类别。 |
 | `enable_yolo` | 是否启用 YOLO 检测。 |
 | `enable_hand_pose` | 是否启用手部骨骼检测。 |
 | `hand_pose_model_path` | MediaPipe 手部骨骼模型路径。 |
+| `hand_pose_active_step_only` | 是否仅在当前步骤需要手部证据时运行手部模型，默认 `true`。 |
+| `vision_inference_interval_frames` | 视觉模型推理间隔帧数，跳过帧使用跟踪预测和缓存结果，默认 `2`。 |
 | `sop_step_enabled` | 可选，各 SOP 步骤是否启用。 |
 | `sop_trigger_sources` | 可选，各 SOP 步骤触发来源。 |
 | `sop_step_timeouts_sec` | 可选，各 SOP 步骤超时时间。 |

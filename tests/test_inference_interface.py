@@ -2,16 +2,12 @@ from __future__ import annotations
 
 import unittest
 
-from scripts.detector import Detection as LegacyDetection
-from scripts.detector import YOLODetector
 from scripts.inference import Detection, DetectorBackend, build_detector
 from scripts.inference.python_yolo import PythonYoloBackend
 
 
 class InferenceInterfaceTests(unittest.TestCase):
-    def test_legacy_imports_point_to_new_python_inference_types(self) -> None:
-        self.assertIs(LegacyDetection, Detection)
-        self.assertIs(YOLODetector, PythonYoloBackend)
+    def test_python_backend_implements_unified_interface(self) -> None:
         self.assertTrue(issubclass(PythonYoloBackend, DetectorBackend))
 
     def test_detection_serialization_exposes_legacy_and_unified_fields(self) -> None:

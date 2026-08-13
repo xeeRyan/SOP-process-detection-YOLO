@@ -7,7 +7,7 @@
 ```csharp
 var config = new ProjectInferenceConfig
 {
-    ProjectDirectory = @"D:\SOPAID\projects\SK_DEMO",
+    ProjectDirectory = @"projects\SK_DEMO",
     PreferredFormat = ModelFormat.Auto,
     UseCuda = false
 };

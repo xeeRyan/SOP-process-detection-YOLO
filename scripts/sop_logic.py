@@ -6,14 +6,9 @@ from dataclasses import dataclass
 from typing import Any, Sequence
 
 from scripts.config import STEP_STABLE_FRAMES, TOOL_HOLD_FRAMES
-from scripts.legacy_sk_config import (
-    SCREW_BIN_ROI,
-    STEP_DEFINITIONS,
-    TOOL_HOME_ROI,
-    WORK_ROI,
-)
+from scripts.constraints import AttributeSequenceConstraint
 from scripts.inference import Detection
-from scripts.utils import bbox_center_in_roi, labels_in_roi, point_in_roi
+from scripts.utils import bbox_center_in_roi, labels_in_roi, mask_roi_overlap, point_in_roi
 
 
 # result.json 中 steps 数组的单步结果结构。
@@ -76,24 +71,22 @@ class SOPStateMachine:
 
     def __init__(
         self,
-        work_roi: Sequence[int] = WORK_ROI,
-        screw_bin_roi: Sequence[int] = SCREW_BIN_ROI,
-        tool_home_roi: Sequence[int] = TOOL_HOME_ROI,
+        *,
+        workflow: dict[str, Any],
+        rois: dict[str, Sequence[int]],
         step_stable_frames: int = STEP_STABLE_FRAMES,
         tool_hold_frames: int = TOOL_HOLD_FRAMES,
         step_enabled: dict[str, bool] | None = None,
         trigger_sources: dict[str, str] | None = None,
         step_timeouts_sec: dict[str, float] | None = None,
-        workflow: dict[str, Any] | None = None,
-        rois: dict[str, Sequence[int]] | None = None,
     ) -> None:
-        self.rois = dict(rois) if rois is not None else {
-            "work": work_roi,
-            "screw_bin": screw_bin_roi,
-            "tool_home": tool_home_roi,
-        }
+        if not workflow:
+            raise ValueError("SOP状态机必须提供非空 workflow")
+        if not rois:
+            raise ValueError("SOP状态机必须提供非空 rois")
+        self.rois = dict(rois)
         enabled_steps = step_enabled or {}
-        step_definitions = self._build_step_definitions(workflow) if workflow is not None else STEP_DEFINITIONS
+        step_definitions = self._build_step_definitions(workflow)
         self.steps = [
             StepResult(**step)
             for step in step_definitions
@@ -110,6 +103,15 @@ class SOPStateMachine:
         self.step_timeouts_sec = step_timeouts_sec or {}
         self._step_started_at: float | None = None
         self._duration_started_at: dict[str, float] = {}
+        self._batch_counter_states: dict[str, dict[str, Any]] = {}
+        workflow_constraints = workflow.get("constraints", {})
+        self._attribute_sequences = [
+            AttributeSequenceConstraint.from_config(item)
+            for item in workflow_constraints.get("attribute_sequences", [])
+        ] if isinstance(workflow_constraints, dict) else []
+        batch_policy = workflow_constraints.get("batch_policy", {}) if isinstance(workflow_constraints, dict) else {}
+        self._reset_sequence_on_step_ids = set(batch_policy.get("reset_sequence_on_step_ids", [])) if isinstance(batch_policy, dict) else set()
+        self._last_step_key: str | None = None
 
     @property
     def current_step(self) -> StepResult | None:
@@ -125,6 +127,27 @@ class SOPStateMachine:
             return "NG"
         step = self.current_step
         return f"WAIT_{step.key.upper()}" if step else "FINISHED"
+
+    @property
+    def counter_summaries(self) -> dict[str, dict[str, Any]]:
+        """Return JSON-safe cumulative ROI batch counters."""
+
+        summaries: dict[str, dict[str, Any]] = {}
+        for key, state in self._batch_counter_states.items():
+            class_counts: dict[str, int] = {}
+            for class_value in state.get("class_by_track", {}).values():
+                class_counts[class_value] = class_counts.get(class_value, 0) + 1
+            summaries[key] = {
+                "roi_id": state["roi_id"],
+                "count": len(state["counted_track_ids"]),
+                "visible_count": state["visible_count"],
+                "class_counts": class_counts,
+                "minimum_count": state["minimum_count"],
+                "empty_frames": state["empty_frames"],
+                "required_empty_frames": state["required_empty_frames"],
+                "status": state["status"],
+            }
+        return summaries
 
     def update(
         self,
@@ -149,6 +172,18 @@ class SOPStateMachine:
         step = self.current_step
         if step is None:
             self.final_result = "OK"
+            return
+
+        if step.key != self._last_step_key:
+            if step.key in self._reset_sequence_on_step_ids:
+                for constraint in self._attribute_sequences:
+                    constraint.reset()
+            self._last_step_key = step.key
+
+        constraint_error = self._validate_attribute_sequences(detections, events or [])
+        if constraint_error:
+            self.reason = constraint_error
+            self._mark_remaining_failed()
             return
 
         if self._step_started_at is None:
@@ -244,7 +279,33 @@ class SOPStateMachine:
             "final_result": self.final_result,
             "steps": [step.to_dict() for step in self.steps],
             "reason": self.reason,
+            "constraints": [constraint.summary() for constraint in self._attribute_sequences],
+            "counters": self.counter_summaries,
         }
+
+    def _validate_attribute_sequences(
+        self,
+        detections: list[Detection],
+        events: list[Any],
+    ) -> str | None:
+        if not self._attribute_sequences:
+            return None
+        by_track_id = {
+            detection.track_id: detection
+            for detection in detections
+            if detection.track_id is not None
+        }
+        for event in events:
+            for constraint in self._attribute_sequences:
+                if not constraint.matches(event.event_type, event.class_name, event.roi_id):
+                    continue
+                detection = by_track_id.get(event.track_id)
+                if detection is None:
+                    return f"属性序列约束 {constraint.constraint_id} 缺少事件目标检测结果"
+                valid, detail = constraint.consume(detection)
+                if not valid:
+                    return f"属性序列约束 {constraint.constraint_id} 校验失败: {detail}"
+        return None
 
     def _mark_remaining_failed(self) -> None:
         for step in self.steps:
@@ -265,7 +326,7 @@ class SOPStateMachine:
         events: list[Any],
         time_sec: float,
     ) -> str | None:
-        if step.trigger_type in {"composite", "object_count", "object_transition", "duration"}:
+        if step.trigger_type in {"composite", "object_count", "object_transition", "roi_batch_removed", "duration"}:
             matched, sources = self._evaluate_condition(
                 step.trigger_config or {},
                 detections,
@@ -293,7 +354,11 @@ class SOPStateMachine:
         else:
             if roi is None:
                 raise ValueError(f"步骤 {step.key} 引用了不存在的 ROI: {step.roi_name}")
-            matched_classes = labels_in_roi(eligible, roi)
+            matched_classes = {
+                item.class_name
+                for item in eligible
+                if self._detection_matches_evidence(item, roi, step.trigger_config or {})
+            }
         trigger_source_mode = self.trigger_sources.get(step.key, "auto")
         if trigger_source_mode not in {"auto", "yolo", "hand_pose"}:
             raise ValueError(f"步骤 {step.key} 的 trigger_source 只支持 auto、yolo、hand_pose")
@@ -323,6 +388,11 @@ class SOPStateMachine:
         minimum_confidence = float(condition.get("confidence", 0.0))
         eligible = [item for item in detections if item.conf >= minimum_confidence]
         class_name = str(condition.get("class_name", "")).strip()
+        class_names = {
+            str(value).strip()
+            for value in condition.get("class_names", [])
+            if isinstance(value, str) and value.strip()
+        }
         roi_id = str(condition.get("roi_id", "")).strip()
 
         if condition_type == "composite":
@@ -354,7 +424,11 @@ class SOPStateMachine:
             matched_detections = [
                 item
                 for item in eligible
-                if (not class_name or item.class_name == class_name)
+                if (
+                    (not class_name and not class_names)
+                    or item.class_name == class_name
+                    or item.class_name in class_names
+                )
                 and (roi is None or bbox_center_in_roi(item.bbox, roi))
             ]
             count = len({item.track_id for item in matched_detections if item.track_id is not None})
@@ -362,7 +436,71 @@ class SOPStateMachine:
             minimum = int(condition.get("min_count", condition.get("count", 1)))
             maximum = condition.get("max_count")
             matched = count >= minimum and (maximum is None or count <= int(maximum))
-            return matched, {f"count:{class_name or '*'}={count}"} if matched else set()
+            group_name = class_name or "+".join(sorted(class_names)) or "*"
+            return matched, {f"count:{group_name}={count}"} if matched else set()
+
+        if condition_type == "roi_batch_removed":
+            roi = self.rois.get(roi_id)
+            if roi is None:
+                return False, set()
+            matched_detections = [
+                item
+                for item in eligible
+                if item.track_id is not None
+                and (
+                    (not class_name and not class_names)
+                    or item.class_name == class_name
+                    or item.class_name in class_names
+                )
+                and self._detection_matches_evidence(item, roi, condition)
+            ]
+            state = self._batch_counter_states.setdefault(
+                state_key,
+                {
+                    "roi_id": roi_id,
+                    "candidate_hits": {},
+                    "counted_track_ids": set(),
+                    "class_by_track": {},
+                    "visible_count": 0,
+                    "minimum_count": int(condition.get("min_count", 1)),
+                    "empty_frames": 0,
+                    "required_empty_frames": int(condition.get("empty_stable_frames", 2)),
+                    "status": "waiting",
+                    "removed": False,
+                },
+            )
+            count = len(state["counted_track_ids"])
+            if state["removed"]:
+                return True, {f"batch_removed:{roi_id}:count={count}"}
+
+            visible_by_track = {item.track_id: item for item in matched_detections}
+            state["visible_count"] = len(visible_by_track)
+            stable_frames = int(condition.get("count_stable_frames", 2))
+            candidate_hits: dict[int, int] = state["candidate_hits"]
+            for track_id, item in visible_by_track.items():
+                if track_id in state["counted_track_ids"]:
+                    continue
+                candidate_hits[track_id] = candidate_hits.get(track_id, 0) + 1
+                if candidate_hits[track_id] >= stable_frames:
+                    state["counted_track_ids"].add(track_id)
+                    state["class_by_track"][track_id] = item.class_name
+                    candidate_hits.pop(track_id, None)
+            for track_id in list(candidate_hits):
+                if track_id not in visible_by_track:
+                    candidate_hits.pop(track_id, None)
+
+            count = len(state["counted_track_ids"])
+            if visible_by_track:
+                state["empty_frames"] = 0
+                state["status"] = "ready_to_remove" if count >= state["minimum_count"] else "stacking"
+            elif count >= state["minimum_count"]:
+                state["empty_frames"] += 1
+                state["status"] = "clearing"
+                if state["empty_frames"] >= state["required_empty_frames"]:
+                    state["removed"] = True
+                    state["status"] = "removed"
+                    return True, {f"batch_removed:{roi_id}:count={count}"}
+            return False, set()
 
         if condition_type == "object_transition":
             from_roi_id = str(condition.get("from_roi_id", "")).strip()
@@ -429,7 +567,7 @@ class SOPStateMachine:
                 item.class_name
                 for item in eligible
                 if (not class_name or item.class_name == class_name)
-                and bbox_center_in_roi(item.bbox, roi)
+                and self._detection_matches_evidence(item, roi, condition)
             }
             return bool(matched), matched
 
@@ -439,6 +577,35 @@ class SOPStateMachine:
         """判断任意手部关键点是否进入指定 ROI。"""
 
         return any(point_in_roi((x, y), roi) for hand in hands for x, y, _ in hand.points)
+
+    @staticmethod
+    def _detection_matches_evidence(
+        detection: Detection,
+        roi: Sequence[int],
+        trigger: dict[str, Any],
+    ) -> bool:
+        evidence = trigger.get("evidence", {})
+        if not isinstance(evidence, dict):
+            evidence = {}
+        evidence_type = str(evidence.get("type", "bbox")).strip().lower()
+        if evidence_type == "bbox":
+            return bbox_center_in_roi(detection.bbox, roi)
+        if evidence_type == "mask":
+            threshold = float(evidence.get("min_roi_overlap", 0.35))
+            return detection.mask is not None and mask_roi_overlap(detection.mask, roi) >= threshold
+        if evidence_type == "keypoints":
+            indices = evidence.get("indices")
+            selected = detection.keypoints or []
+            if isinstance(indices, list):
+                selected = [selected[index] for index in indices if isinstance(index, int) and 0 <= index < len(selected)]
+            minimum_score = float(evidence.get("min_keypoint_score", 0.0))
+            return any(
+                len(point) >= 3
+                and float(point[2]) >= minimum_score
+                and point_in_roi((float(point[0]), float(point[1])), roi)
+                for point in selected
+            )
+        raise ValueError(f"不支持的视觉证据类型: {evidence_type}")
 
     def _resolve_trigger_source(self, yolo_sources: list[str], hand_hit: bool) -> str | None:
         """返回当前步骤触发来源，供 result.json 记录。"""

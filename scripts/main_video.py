@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Sequence
 from uuid import uuid4
 
 import cv2
@@ -19,25 +18,25 @@ from scripts.config import (
     CONFIDENCE_THRESHOLD,
     ENABLE_HAND_POSE,
     HAND_POSE_SAMPLE_INTERVAL,
+    HAND_POSE_ACTIVE_STEP_ONLY,
+    VISION_INFERENCE_INTERVAL_FRAMES,
     TRACKING_IOU_THRESHOLD,
     TRACKING_MAX_MISSING_FRAMES,
+    TRACKING_MIN_CONFIRMED_HITS,
+    TRACKING_LOW_CONFIDENCE,
+    TRACKING_NEW_TRACK_CONFIDENCE,
+    TRACKING_SECOND_MATCH_IOU_THRESHOLD,
     EVENT_LOST_TOLERANCE_FRAMES,
+    EVENT_ENTER_STABLE_FRAMES,
+    EVENT_EXIT_STABLE_FRAMES,
     RESULT_JSON_NAME,
     RESULT_VIDEO_NAME,
 )
-from scripts.legacy_sk_config import (
-    DEFAULT_MODEL_PATH,
-    DEFAULT_VIDEO_PATH,
-    SCREW_BIN_ROI,
-    TARGET_CLASSES,
-    TOOL_HOME_ROI,
-    WORK_ROI,
-)
-from scripts.inference import build_detector
+from scripts.inference import DetectionFusion, ModelRouter, build_detector
 from scripts.events import SopEventEngine
 from scripts.project import load_sop_project
 from scripts.sop_logic import SOPStateMachine
-from scripts.tracking import SimpleObjectTracker
+from scripts.tracking import ByteTrackTracker
 from scripts.project.storage import write_json_atomic
 from scripts.utils import ensure_dir
 from scripts.visualizer import draw_detections, draw_hand_landmarks, draw_roi, draw_sop_status
@@ -46,31 +45,37 @@ from scripts.runtime_logging import close_operation_logger, create_operation_log
 
 # 主流程入口：视频输入 -> YOLO 检测 -> 手部骨骼 -> SOP 判定 -> 视频/JSON 输出。
 def process_video(
-    video_path: str | Path = DEFAULT_VIDEO_PATH,
+    video_path: str | Path,
+    *,
+    sop_project_dir: str | Path,
     model_path: str | Path | None = None,
     output_dir: str | Path = DEFAULT_OUTPUT_DIR,
-    roi: Sequence[int] = WORK_ROI,
-    screw_bin_roi: Sequence[int] = SCREW_BIN_ROI,
-    tool_home_roi: Sequence[int] = TOOL_HOME_ROI,
     enable_hand_pose: bool = ENABLE_HAND_POSE,
     hand_pose_model_path: str | Path = DEFAULT_HAND_POSE_MODEL_PATH,
     hand_pose_sample_interval: int = HAND_POSE_SAMPLE_INTERVAL,
+    hand_pose_active_step_only: bool = HAND_POSE_ACTIVE_STEP_ONLY,
+    vision_inference_interval_frames: int = VISION_INFERENCE_INTERVAL_FRAMES,
     tracking_iou_threshold: float = TRACKING_IOU_THRESHOLD,
     tracking_max_missing_frames: int = TRACKING_MAX_MISSING_FRAMES,
+    tracking_min_confirmed_hits: int = TRACKING_MIN_CONFIRMED_HITS,
+    tracking_low_confidence: float = TRACKING_LOW_CONFIDENCE,
+    tracking_new_track_confidence: float = TRACKING_NEW_TRACK_CONFIDENCE,
+    tracking_second_match_iou_threshold: float = TRACKING_SECOND_MATCH_IOU_THRESHOLD,
     event_lost_tolerance_frames: int = EVENT_LOST_TOLERANCE_FRAMES,
+    event_enter_stable_frames: int = EVENT_ENTER_STABLE_FRAMES,
+    event_exit_stable_frames: int = EVENT_EXIT_STABLE_FRAMES,
     enable_yolo: bool = DEFAULT_ENABLE_YOLO,
     confidence_threshold: float = CONFIDENCE_THRESHOLD,
     nms_threshold: float = DEFAULT_NMS_THRESHOLD,
     inference_device: str | int | None = None,
     inference_backend: str = "python",
-    target_classes: Sequence[str] | None = None,
+    target_classes: list[str] | None = None,
     sop_step_enabled: dict[str, bool] | None = None,
     sop_trigger_sources: dict[str, str] | None = None,
     sop_step_timeouts_sec: dict[str, float] | None = None,
     output_video: bool = DEFAULT_OUTPUT_VIDEO,
     output_json: bool = DEFAULT_OUTPUT_JSON,
     realtime_display: bool = DEFAULT_REALTIME_DISPLAY,
-    sop_project_dir: str | Path | None = None,
 ) -> dict:
     """视频级 SOP 检测入口。
 
@@ -80,37 +85,55 @@ def process_video(
     - 返回值与 result.json 内容一致，可直接给软件端消费。
     """
 
-    video_path = Path(video_path)
+    video_path = Path(video_path).expanduser().resolve()
+    sop_project = load_sop_project(sop_project_dir)
     output_dir = ensure_dir(Path(output_dir))
     if hand_pose_sample_interval <= 0:
         raise ValueError("hand_pose_sample_interval 必须是正整数")
+    if vision_inference_interval_frames <= 0:
+        raise ValueError("vision_inference_interval_frames 必须是正整数")
     if not 0 <= tracking_iou_threshold <= 1:
         raise ValueError("tracking_iou_threshold 必须在 0 到 1 之间")
     if tracking_max_missing_frames < 0 or event_lost_tolerance_frames < 0:
         raise ValueError("跟踪和事件丢失容忍帧数不能小于 0")
-    sop_project = load_sop_project(sop_project_dir) if sop_project_dir is not None else None
-    if model_path in (None, "") and sop_project is not None:
-        active_model = sop_project.project.get("active_model")
-        if active_model:
-            candidate = Path(active_model)
-            model_path = candidate if candidate.is_absolute() else sop_project.root / candidate
-        else:
-            raise ValueError(
-                f"当前 SOP 项目未配置活动模型: {sop_project.project_id}。"
-                "请先训练并激活项目模型，或在检测请求中显式传入 model_path。"
-            )
-    model_path = Path(model_path or DEFAULT_MODEL_PATH).resolve()
-    active_classes = (
-        list(target_classes)
-        if target_classes is not None
-        else sop_project.class_names if sop_project is not None else list(TARGET_CLASSES)
-    )
+    if event_enter_stable_frames < 1 or event_exit_stable_frames < 1:
+        raise ValueError("事件进入和退出确认帧数必须大于 0")
+    if tracking_min_confirmed_hits < 1:
+        raise ValueError("tracking_min_confirmed_hits 必须大于等于 1")
+    if not 0 <= confidence_threshold <= 1:
+        raise ValueError("confidence_threshold必须在0到1之间")
+    if not 0 <= nms_threshold <= 1:
+        raise ValueError("nms_threshold必须在0到1之间")
+    if not 0 <= tracking_low_confidence <= confidence_threshold <= tracking_new_track_confidence <= 1:
+        raise ValueError(
+            "跟踪置信度必须满足 0 <= low <= confidence_threshold <= new_track <= 1"
+        )
+    model_paths: dict[str, Path] = {}
+    if enable_yolo:
+        for task in sorted(sop_project.required_model_tasks):
+            if task == "detect" and model_path not in (None, ""):
+                model_paths[task] = Path(model_path).expanduser().resolve()
+            else:
+                model_paths[task] = sop_project.resolve_model_path(task)
+    model_path = model_paths.get("detect")
+    if model_path is None and model_paths:
+        model_path = next(iter(model_paths.values()))
+    active_classes = list(sop_project.class_names if target_classes is None else target_classes)
+    if not active_classes:
+        raise ValueError("target_classes不能为空")
+    unknown_classes = sorted(set(active_classes) - set(sop_project.class_names))
+    if unknown_classes:
+        raise ValueError(
+            "target_classes包含当前SOP项目未定义的类别: " + ", ".join(unknown_classes)
+        )
     pipeline_config = _build_pipeline_config(
         enable_yolo=enable_yolo,
         confidence_threshold=confidence_threshold,
         nms_threshold=nms_threshold,
         inference_device=inference_device,
         inference_backend=inference_backend,
+        vision_task=sop_project.active_model_task,
+        vision_tasks=sorted(model_paths),
         target_classes=active_classes,
         sop_step_enabled=sop_step_enabled,
         sop_trigger_sources=sop_trigger_sources,
@@ -120,8 +143,16 @@ def process_video(
         realtime_display=realtime_display,
         tracking_iou_threshold=tracking_iou_threshold,
         tracking_max_missing_frames=tracking_max_missing_frames,
+        tracking_min_confirmed_hits=tracking_min_confirmed_hits,
+        tracking_low_confidence=tracking_low_confidence,
+        tracking_new_track_confidence=tracking_new_track_confidence,
+        tracking_second_match_iou_threshold=tracking_second_match_iou_threshold,
         event_lost_tolerance_frames=event_lost_tolerance_frames,
+        event_enter_stable_frames=event_enter_stable_frames,
+        event_exit_stable_frames=event_exit_stable_frames,
     )
+    pipeline_config["ai"]["inference_interval_frames"] = vision_inference_interval_frames
+    pipeline_config["ai"]["hand_pose_active_step_only"] = bool(hand_pose_active_step_only)
     logger, log_path = create_operation_logger("detect", output_dir.parent / "logs")
     log_event(
         logger,
@@ -129,12 +160,12 @@ def process_video(
         video_path=video_path,
         model_path=model_path,
         output_dir=output_dir,
-        work_roi=list(roi),
-        screw_bin_roi=list(screw_bin_roi),
-        tool_home_roi=list(tool_home_roi),
+        project_id=sop_project.project_id,
         enable_hand_pose=enable_hand_pose,
         hand_pose_model_path=hand_pose_model_path,
         hand_pose_sample_interval=hand_pose_sample_interval,
+        hand_pose_active_step_only=hand_pose_active_step_only,
+        vision_inference_interval_frames=vision_inference_interval_frames,
         pipeline=pipeline_config,
     )
 
@@ -149,44 +180,44 @@ def process_video(
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     log_event(logger, "video_opened", fps=fps, width=width, height=height)
 
-    project_rois = sop_project.resolve_rois(width, height) if sop_project is not None else None
-    if project_rois is not None:
-        roi = project_rois.get("work", roi)
-        screw_bin_roi = project_rois.get("screw_bin", screw_bin_roi)
-        tool_home_roi = project_rois.get("tool_home", tool_home_roi)
-        log_event(
-            logger,
-            "project_configuration_resolved",
-            project_id=sop_project.project_id,
-            workflow_id=sop_project.workflow["workflow_id"],
-            model_path=model_path,
-            rois=project_rois,
-        )
+    project_rois = sop_project.resolve_rois(width, height)
+    log_event(
+        logger,
+        "project_configuration_resolved",
+        project_id=sop_project.project_id,
+        workflow_id=sop_project.workflow["workflow_id"],
+        model_paths=model_paths,
+        rois=project_rois,
+    )
 
-    # 初始化目标检测器和可选的手部骨骼检测器。
-    detector = None
-    if enable_yolo:
-        try:
-            detector = build_detector(
-                model_path,
-                conf_threshold=confidence_threshold,
-                target_classes=active_classes,
-                nms_threshold=nms_threshold,
-                device=inference_device,
-                backend=inference_backend,
-            )
-            pipeline_config["ai"].update(detector.metadata())
-        except Exception as exc:
-            logger.exception("detect_failed | detector_init_failed | %s", exc)
-            cap.release()
-            close_operation_logger(logger)
-            raise
+    # 按工作流需要懒加载视觉任务后端；只有检测任务的结果进入跟踪链。
+    detector_factories = {
+        task: _make_detector_factory(
+            task_model_path,
+            task=task,
+            conf_threshold=tracking_low_confidence,
+            target_classes=active_classes,
+            nms_threshold=nms_threshold,
+            device=inference_device,
+            backend=inference_backend,
+        )
+        for task, task_model_path in model_paths.items()
+    }
+    model_router = ModelRouter(
+        detector_factories=detector_factories,
+        default_interval=vision_inference_interval_frames,
+        task_intervals=_model_task_intervals(sop_project),
+    )
+    detection_fusion = DetectionFusion(iou_threshold=tracking_iou_threshold)
+    pipeline_config["ai"]["router"] = model_router.metadata()
+    pipeline_config["ai"]["backends"] = {}
     hand_pose_detector = None
     if enable_hand_pose:
         try:
             from scripts.hand_pose import build_hand_pose_detector
         except ModuleNotFoundError as exc:
             if exc.name == "mediapipe":
+                model_router.close()
                 cap.release()
                 close_operation_logger(logger)
                 raise ModuleNotFoundError(
@@ -194,6 +225,7 @@ def process_video(
                     "或使用 `--no-hand-pose` 关闭手部骨骼检测。"
                 ) from exc
             cap.release()
+            model_router.close()
             close_operation_logger(logger)
             raise
 
@@ -201,32 +233,38 @@ def process_video(
             hand_pose_detector = build_hand_pose_detector(hand_pose_model_path)
         except Exception as exc:
             logger.exception("detect_failed | hand_pose_init_failed | %s", exc)
+            model_router.close()
             cap.release()
             close_operation_logger(logger)
             raise
 
     # SOP 状态机只依赖检测结果和 ROI，不直接依赖模型对象。
     machine = SOPStateMachine(
-        work_roi=roi,
-        screw_bin_roi=screw_bin_roi,
-        tool_home_roi=tool_home_roi,
+        workflow=sop_project.workflow,
+        rois=project_rois,
         step_enabled=sop_step_enabled,
         trigger_sources=sop_trigger_sources,
         step_timeouts_sec=sop_step_timeouts_sec,
-        workflow=sop_project.workflow if sop_project is not None else None,
-        rois=project_rois,
     )
+    # 唯一生产跟踪链：ByteTrack两阶段匹配 + 卡尔曼运动预测。
     object_tracker = (
-        SimpleObjectTracker(
+        ByteTrackTracker(
             iou_threshold=tracking_iou_threshold,
             max_missing_frames=tracking_max_missing_frames,
+            min_confirmed_hits=tracking_min_confirmed_hits,
+            high_confidence=confidence_threshold,
+            low_confidence=tracking_low_confidence,
+            new_track_confidence=tracking_new_track_confidence,
+            second_match_iou_threshold=tracking_second_match_iou_threshold,
         )
-        if detector is not None
+        if model_router.available_tasks
         else None
     )
     event_engine = SopEventEngine(
         machine.rois,
         lost_tolerance_frames=event_lost_tolerance_frames,
+        enter_stable_frames=event_enter_stable_frames,
+        exit_stable_frames=event_exit_stable_frames,
     )
     event_history = []
 
@@ -247,6 +285,7 @@ def process_video(
         "detected_frame_count": 0,
         "inference_count": 0,
         "detection_interval_frames": hand_pose_sample_interval,
+        "active_step_only": bool(hand_pose_active_step_only),
         "max_hands_in_frame": 0,
         "samples": [],
     }
@@ -254,6 +293,7 @@ def process_video(
     frame_id = 0
     processing_failed = False
     cached_hands = []
+    previous_step_key: str | None = None
     hand_pose_interval = max(1, int(hand_pose_sample_interval))
     try:
         while True:
@@ -275,19 +315,58 @@ def process_video(
                 log_event(logger, "output_video_opened", width=frame.shape[1], height=frame.shape[0])
 
             # 单帧检测结果会同时用于 SOP 判定和可视化叠加。
-            raw_detections = detector.detect(frame) if detector else []
-            detections = object_tracker.update(raw_detections) if object_tracker else raw_detections
+            current_trigger = (
+                machine.current_step.trigger_config
+                if machine.current_step is not None
+                else {}
+            )
+            current_step_key = machine.current_step.key if machine.current_step is not None else None
+            step_changed = current_step_key != previous_step_key
+            if step_changed:
+                model_router.clear_cache()
+                previous_step_key = current_step_key
+            raw_by_task, fresh_tasks = model_router.infer(
+                frame,
+                current_trigger,
+                frame_id,
+                force=step_changed,
+            )
+            tracking_task = "detect" if "detect" in raw_by_task else next(iter(raw_by_task), None)
+            raw_tracking = raw_by_task.get(tracking_task, []) if tracking_task else []
+            if object_tracker and tracking_task:
+                tracked_detections = (
+                    object_tracker.update(raw_tracking)
+                    if tracking_task in fresh_tasks
+                    else object_tracker.predict()
+                )
+            else:
+                tracked_detections = raw_tracking
+            detections = detection_fusion.merge(
+                tracked_detections,
+                {
+                    task: task_detections
+                    for task, task_detections in raw_by_task.items()
+                    if task != tracking_task
+                },
+            )
             time_sec = frame_id / fps
             timestamp_ms = int(time_sec * 1000)
             hands = []
             hand_pose_inferred = False
             if hand_pose_detector:
-                if _should_run_hand_pose(frame_id, hand_pose_interval):
+                hand_pose_active = _trigger_requires_hand_pose(current_trigger)
+                should_infer_hand = (
+                    _should_run_hand_pose(frame_id, hand_pose_interval)
+                    and (not hand_pose_active_step_only or hand_pose_active)
+                )
+                if should_infer_hand:
                     cached_hands = hand_pose_detector.detect(frame, timestamp_ms)
                     hand_pose_inferred = True
                     hand_pose_summary["inference_count"] += 1
                     if cached_hands:
                         hand_pose_summary["detected_frame_count"] += 1
+                elif hand_pose_active_step_only and not hand_pose_active:
+                    cached_hands = []
                 hands = cached_hands
             if hands:
                 hand_pose_summary["max_hands_in_frame"] = max(hand_pose_summary["max_hands_in_frame"], len(hands))
@@ -341,8 +420,7 @@ def process_video(
             writer.release()
         if hand_pose_detector:
             hand_pose_detector.close()
-        if detector:
-            detector.close()
+        model_router.close()
         if realtime_display:
             cv2.destroyAllWindows()
         if processing_failed:
@@ -359,20 +437,19 @@ def process_video(
         video_written = True
 
     result = machine.finalize(video_path.name)
-    result["sop_project"] = (
-        {
-            "project_id": sop_project.project_id,
-            "project_dir": str(sop_project.root),
-            "workflow_id": sop_project.workflow["workflow_id"],
-            "workflow_version": sop_project.workflow.get("version"),
-            "model_path": str(model_path),
-            "model_manifest": sop_project.project.get("active_model_manifest"),
-        }
-        if sop_project is not None
-        else None
-    )
+    result["sop_project"] = {
+        "project_id": sop_project.project_id,
+        "project_dir": str(sop_project.root),
+        "workflow_id": sop_project.workflow["workflow_id"],
+        "workflow_version": sop_project.workflow.get("version"),
+        "model_path": str(model_path) if model_path is not None else None,
+        "model_paths": {task: str(path) for task, path in model_paths.items()},
+        "model_manifest": sop_project.project.get("active_model_manifest"),
+    }
     result["hand_pose"] = hand_pose_summary
     result["pipeline"] = pipeline_config
+    result["pipeline"]["inference_counts"] = dict(model_router.inference_counts)
+    result["pipeline"]["router"] = model_router.metadata()
     result["events"] = [event.to_dict() for event in event_history]
     result["output_video"] = str(result_video_path) if video_written else None
     result["output_json"] = str(result_json_path) if output_json else None
@@ -410,12 +487,83 @@ def _should_run_hand_pose(frame_id: int, interval: int) -> bool:
     return frame_id % interval == 0
 
 
+def _should_run_vision(frame_id: int, interval: int) -> bool:
+    """判断当前帧是否执行视觉模型推理。"""
+
+    if interval <= 0:
+        raise ValueError("视觉模型推理间隔必须是正整数")
+    return frame_id % interval == 0
+
+
+def _trigger_requires_hand_pose(trigger: dict) -> bool:
+    """递归判断当前步骤是否需要手部关键点结果。"""
+
+    if not isinstance(trigger, dict):
+        return False
+    if trigger.get("type") == "hand_in_roi" or trigger.get("allow_hand_pose") is True:
+        return True
+    if any(_trigger_requires_hand_pose(item) for item in trigger.get("conditions", [])):
+        return True
+    nested = trigger.get("condition")
+    return isinstance(nested, dict) and _trigger_requires_hand_pose(nested)
+
+
+def _vision_tasks_for_trigger(trigger: dict) -> set[str]:
+    """Return model tasks required by one active workflow trigger."""
+
+    if not isinstance(trigger, dict):
+        return {"detect"}
+    evidence = trigger.get("evidence")
+    evidence_type = str(evidence.get("type", "bbox")) if isinstance(evidence, dict) else "bbox"
+    trigger_type = str(trigger.get("type", "")).strip().lower()
+    if evidence_type == "mask":
+        tasks = {"segment"}
+    elif evidence_type == "keypoints":
+        tasks = {"pose"}
+    elif trigger_type in {"composite", "duration", "hand_in_roi"}:
+        tasks = set()
+    else:
+        tasks = {"detect"}
+    for condition in trigger.get("conditions", []):
+        tasks.update(_vision_tasks_for_trigger(condition))
+    nested = trigger.get("condition")
+    if isinstance(nested, dict):
+        tasks.update(_vision_tasks_for_trigger(nested))
+    if trigger.get("type") == "hand_in_roi":
+        tasks.discard("detect")
+    return tasks
+
+
+def _model_task_intervals(sop_project) -> dict[str, int]:
+    """读取项目级任务推理间隔；未声明时由全局间隔控制。"""
+
+    intervals: dict[str, int] = {}
+    for task, profile in sop_project.model_profiles.items():
+        if not isinstance(profile, dict):
+            continue
+        value = profile.get("inference_interval_frames")
+        if isinstance(value, int) and value > 0:
+            intervals[str(task)] = value
+    return intervals
+
+
+def _make_detector_factory(model_path: Path, **kwargs):
+    """创建延迟构造单个视觉后端的工厂。"""
+
+    def create_detector():
+        return build_detector(model_path, **kwargs)
+
+    return create_detector
+
+
 def _build_pipeline_config(
     enable_yolo: bool,
     confidence_threshold: float,
     nms_threshold: float,
     inference_device: str | int | None,
     inference_backend: str,
+    vision_task: str,
+    vision_tasks: list[str],
     target_classes: list[str],
     sop_step_enabled: dict[str, bool] | None,
     sop_trigger_sources: dict[str, str] | None,
@@ -425,7 +573,13 @@ def _build_pipeline_config(
     realtime_display: bool,
     tracking_iou_threshold: float,
     tracking_max_missing_frames: int,
+    tracking_min_confirmed_hits: int,
+    tracking_low_confidence: float,
+    tracking_new_track_confidence: float,
+    tracking_second_match_iou_threshold: float,
     event_lost_tolerance_frames: int,
+    event_enter_stable_frames: int,
+    event_exit_stable_frames: int,
 ) -> dict:
     """生成本次任务的统一流水线配置，供日志和结果 JSON 共同使用。"""
 
@@ -436,6 +590,8 @@ def _build_pipeline_config(
             "nms_threshold": nms_threshold,
             "inference_device": inference_device,
             "backend": inference_backend,
+            "task": vision_task,
+            "tasks": vision_tasks,
             "target_classes": target_classes,
         },
         "sop": {
@@ -444,9 +600,18 @@ def _build_pipeline_config(
             "step_timeouts_sec": sop_step_timeouts_sec or {},
         },
         "tracking": {
+            "backend": "bytetrack",
             "iou_threshold": tracking_iou_threshold,
             "max_missing_frames": tracking_max_missing_frames,
+            "min_confirmed_hits": tracking_min_confirmed_hits,
+            "high_confidence": confidence_threshold,
+            "low_confidence": tracking_low_confidence,
+            "new_track_confidence": tracking_new_track_confidence,
+            "second_match_iou_threshold": tracking_second_match_iou_threshold,
+            "motion_prediction": True,
             "event_lost_tolerance_frames": event_lost_tolerance_frames,
+            "event_enter_stable_frames": event_enter_stable_frames,
+            "event_exit_stable_frames": event_exit_stable_frames,
         },
         "output": {
             "output_video": output_video,

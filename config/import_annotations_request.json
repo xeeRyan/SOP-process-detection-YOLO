@@ -2,7 +2,7 @@
   "command": "import_annotations",
   "params": {
     "sop_project_dir": "projects/SK_DEMO",
-    "labels_dir": "D:\\external_annotations\\labels",
+    "labels_dir": "data/labels",
     "overwrite": true,
     "mark_missing_as_empty": false
   }

@@ -1,6 +1,6 @@
 # SOP 工序检测部署计划
 
-当前项目采用参考 `DEEPAIY/DEEPLEARN_PYD.py` 的封装形式，但不修改 `DEEPAIY` 文件夹。
+当前项目通过根目录 `SOP_PYD.py` 提供命令行、TCP与打包入口。
 
 ## 当前封装形式
 
@@ -41,6 +41,7 @@ model_file:D:\Python\SOPAID\config\detect_request.json
 {
   "command": "detect",
   "params": {
+    "sop_project_dir": "projects/SK_DEMO",
     "video_path": "videos/sk.mp4",
     "output_dir": "outputs/yolo26s"
   }

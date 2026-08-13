@@ -8,7 +8,6 @@ import cv2
 import numpy as np
 
 from scripts.config import BOX_COLOR, NG_COLOR, OK_COLOR, ROI_COLOR, TEXT_COLOR
-from scripts.legacy_sk_config import SCREW_BIN_COLOR, TOOL_HOME_COLOR
 from scripts.inference import Detection
 from scripts.sop_logic import SOPStateMachine
 
@@ -41,19 +40,26 @@ def draw_detections(frame: np.ndarray, detections: list[Detection]) -> None:
             BOX_COLOR,
             2,
         )
+        if detection.mask:
+            polygon = np.asarray(detection.mask, dtype=np.int32)
+            cv2.polylines(frame, [polygon], isClosed=True, color=(255, 0, 0), thickness=2)
+        if detection.keypoints:
+            for point in detection.keypoints:
+                if len(point) < 3 or float(point[2]) <= 0:
+                    continue
+                cv2.circle(frame, (int(point[0]), int(point[1])), 3, (0, 255, 0), -1)
 
 
 # 输出视频中的 ROI 图层。
-def draw_roi(frame: np.ndarray, roi: Sequence[int], label: str = "WORK ROI") -> None:
+def draw_roi(
+    frame: np.ndarray,
+    roi: Sequence[int],
+    label: str = "ROI",
+    color: tuple[int, int, int] = ROI_COLOR,
+) -> None:
     """在输出视频帧上叠加业务 ROI。"""
 
     x1, y1, x2, y2 = roi
-    if label == "SCREW BIN":
-        color = SCREW_BIN_COLOR
-    elif label == "TOOL HOME":
-        color = TOOL_HOME_COLOR
-    else:
-        color = ROI_COLOR
     cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
     cv2.putText(
         frame,
@@ -82,6 +88,14 @@ def draw_sop_status(frame: np.ndarray, machine: SOPStateMachine) -> None:
     )
 
     y = 85
+    for key, counter in machine.counter_summaries.items():
+        text = (
+            f"Counter {key}: {counter['count']} "
+            f"visible={counter['visible_count']} status={counter['status']}"
+        )
+        cv2.putText(frame, text, (20, y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, TEXT_COLOR, 2)
+        y += 35
+
     for step in machine.steps:
         color = OK_COLOR if step.status == "done" else TEXT_COLOR
         text = f"{step.step_id}. {step.key}: {step.status}"

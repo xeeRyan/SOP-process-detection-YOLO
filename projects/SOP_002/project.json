@@ -1,24 +1,30 @@
 {
   "schema_version": "1.0",
   "project_id": "SOP_002",
-  "name": "新装配流程",
-  "description": "操作员创建的新 SOP 项目",
+  "name": "手套叠装流程",
+  "description": "手套分两批正反交替堆叠并装入塑料包装袋",
   "created_at": "2026-07-23T03:08:27.039526+00:00",
-  "updated_at": "2026-07-23T03:08:27.039526+00:00",
-  "status": "draft",
+  "updated_at": "2026-08-11T05:49:26.489146+00:00",
+  "status": "active",
   "classes": [
     {
       "id": 0,
-      "name": "part_a",
-      "display_name": "零件 A"
+      "name": "glove_front",
+      "display_name": "手套正面"
     },
     {
       "id": 1,
-      "name": "tool",
-      "display_name": "工具"
+      "name": "glove_back",
+      "display_name": "手套背面"
+    },
+    {
+      "id": 2,
+      "name": "plastic_bag",
+      "display_name": "塑料包装袋"
     }
   ],
-  "active_model": null,
+  "active_model": "models/sop_detector/1.0.5/best.pt",
   "active_workflow": "workflow.json",
-  "active_roi_profile": "rois.json"
+  "active_roi_profile": "rois.json",
+  "active_model_manifest": "models/sop_detector/1.0.5/model_manifest.json"
 }

@@ -22,6 +22,7 @@
     }
   ],
   "active_model": "models/sop_detector/1.0.3/best.pt",
+  "active_model_task": "detect",
   "active_workflow": "workflow.json",
   "active_roi_profile": "rois.json",
   "updated_at": "2026-07-27T03:39:37.314238+00:00",

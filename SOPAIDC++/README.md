@@ -23,7 +23,7 @@ SDK默认采用与当前Python/Ultralytics导出链路一致的letterbox预处�
 
 ```cpp
 SopAidProjectDirectoryConfig config;
-config.project_dir = "D:/SOPAID/projects/SK_DEMO";
+config.project_dir = "projects/SK_DEMO";
 config.preferred_model_format = SopAidModelFormat::Auto;
 
 sopaid::Inference inference;
@@ -42,7 +42,7 @@ const auto status = inference.InitProjectDirectory(config, &error);
 ## 工程入口
 
 ```text
-D:\C++\SOPAID\SOPAID.sln
+SOPAIDC++/SOPAID.sln
 ```
 
 解决方案包含两个项目：
@@ -202,7 +202,7 @@ SOPAID.exe <model_path> <video_path> [output_root] [confidence_threshold] [nms_t
 示例：
 
 ```text
-D:\C++\SOPAID\x64\Release\SOPAIDExe\SOPAID.exe D:\Python\SOPAID\dist\SOP_PYD\models\sop_yolo26s_v1_best.engine D:\Python\SOPAID\dist\SOP_PYD\_internal\videos\sk.mp4 D:\Python\SOPAID\dist\SOP_PYD\outputs 0.25 D:\Python\SOPAID\dist\SOP_PYD\models\palm_detection_mediapipe_2023feb.onnx D:\Python\SOPAID\dist\SOP_PYD\models\handpose_estimation_mediapipe_2023feb.onnx 5
+SOPAIDExe.exe models/best_yolo26s.engine videos/sk.mp4 outputs 0.25 0.70 models/palm_detection_mediapipe_2023feb.onnx models/handpose_estimation_mediapipe_2023feb.onnx 5
 ```
 
 `frame_stride` 表示抽帧推理间隔：
@@ -215,7 +215,7 @@ D:\C++\SOPAID\x64\Release\SOPAIDExe\SOPAID.exe D:\Python\SOPAID\dist\SOP_PYD\mod
 默认输出根目录：
 
 ```text
-D:\Python\SOPAID\dist\SOP_PYD\outputs
+outputs
 ```
 
 每次运行会新建结果文件夹：
@@ -235,17 +235,16 @@ frame_results.jsonl  # 抽帧推理结果，每行包含 detections 和 hands
 日志单独放入：
 
 ```text
-D:\Python\SOPAID\dist\SOP_PYD\outputs\logs
+outputs/logs
 ```
 
 ## 本机依赖配置
 
 当前依赖路径在 `SopAidInfer.user.props` 中配置：
 
-- OpenCV：`D:\Opencv\10\opencv\build`
-- ONNX Runtime：`D:\Opencv\Onnxruntime\onnxruntime-win-x64-1.15.1`
-- TensorRT：`E:\TensorRT-11.1.0.106`
-- LibTorch：`E:\libtorch`
+- OpenCV：通过 `SOPAID_OPENCV_ROOT` 或 `SopAidInfer.user.props` 配置
+- ONNX Runtime：通过 `SOPAID_ONNXRUNTIME_ROOT` 或 `SopAidInfer.user.props` 配置
+- TensorRT、LibTorch：仅在启用对应后端时通过本机 props 配置
 - C++ 标准：C++20
 
 注意：普通 Ultralytics 训练得到的 `.pt` 通常不能直接由 LibTorch 加载；`.pt` 后端要求 TorchScript 模型。

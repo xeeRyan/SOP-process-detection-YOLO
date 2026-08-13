@@ -1,5 +1,36 @@
 {
   "schema_version": "1.0",
   "coordinate_type": "normalized",
-  "regions": []
+  "regions": [
+    {
+      "id": "stack_area",
+      "name": "主工作区",
+      "shape": "rectangle",
+      "points": [
+        [
+          0.337357,
+          0.317774
+        ],
+        [
+          0.657064,
+          0.533214
+        ]
+      ]
+    },
+    {
+      "id": "side_pack_area",
+      "name": "主工作区",
+      "shape": "rectangle",
+      "points": [
+        [
+          0.107769,
+          0.538343
+        ],
+        [
+          0.88236,
+          0.912798
+        ]
+      ]
+    }
+  ]
 }

@@ -8,7 +8,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from task_dispatcher import run_task
-from scripts.legacy_sk_config import DEFAULT_SOP_PROJECT_DIR
+
+DEFAULT_SOP_PROJECT_DIR = Path(__file__).resolve().parents[1] / "projects" / "SK_DEMO"
 
 
 class ProjectModelConversionTests(unittest.TestCase):

@@ -24,7 +24,7 @@ with `torch::jit::load`.
   "onnx_output_path": "models/best_yolo26n.onnx",
   "export_engine": true,
   "engine_output_path": "models/best_yolo26n.engine",
-  "trtexec_path": "E:\\TensorRT-11.1.0.106\\bin\\trtexec.exe",
+  "trtexec_path": "trtexec",
   "export_strict": true
 }
 ```
