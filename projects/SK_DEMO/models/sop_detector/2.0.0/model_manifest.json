@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.0",
+  "project_id": "SK_DEMO",
+  "model_id": "sop_detector",
+  "model_version": "2.0.0",
+  "created_at": "2026-08-03T03:55:13.692752+00:00",
+  "dataset_name": "dataset_sk_smoke_v1",
+  "dataset_manifest": "dataset/dataset_sk_smoke_v1/dataset_manifest.json",
+  "base_model": "E:\\Project\\SOPAID\\SOPAID\\models\\yolo26n.pt",
+  "artifacts": {
+    "best_pt": "models/sop_detector/2.0.0/best.pt",
+    "last_pt": "runs/sop_detector_2_0_0/weights/last.pt",
+    "torchscript": null,
+    "onnx": null,
+    "engine": null
+  },
+  "training": {
+    "run_dir": "runs/sop_detector_2_0_0",
+    "results_csv": "runs/sop_detector_2_0_0/results.csv",
+    "args_yaml": "runs/sop_detector_2_0_0/args.yaml",
+    "log_path": "outputs/logs/train_20260803_115047_315175.log",
+    "parameters": {
+      "model": "E:\\Project\\SOPAID\\SOPAID\\models\\yolo26n.pt",
+      "data": "E:\\Project\\SOPAID\\SOPAID\\projects\\SK_DEMO\\dataset\\dataset_sk_smoke_v1\\data.yaml",
+      "project_dir": "E:\\Project\\SOPAID\\SOPAID\\projects\\SK_DEMO\\runs",
+      "run_name": "sop_detector_2_0_0",
+      "epochs": 100,
+      "batch": 8,
+      "imgsz": 640,
+      "workers": 0,
+      "device": null,
+      "optimizer": "auto",
+      "amp": true,
+      "val_ratio": null,
+      "images_dir": null,
+      "labels_dir": null,
+      "dataset_output_dir": null,
+      "copy_best_to": "E:\\Project\\SOPAID\\SOPAID\\projects\\SK_DEMO\\models\\sop_detector\\2.0.0\\best.pt",
+      "exist_ok": false,
+      "augmentations": {}
+    }
+  },
+  "validation_metrics": {
+    "epoch": 100.0,
+    "time": 258.862,
+    "train/box_loss": 1.42937,
+    "train/cls_loss": 2.13793,
+    "train/dfl_loss": 0.00575,
+    "metrics/precision(B)": 0.91701,
+    "metrics/recall(B)": 0.78608,
+    "metrics/mAP50(B)": 0.83896,
+    "metrics/mAP50-95(B)": 0.42934,
+    "val/box_loss": 1.96613,
+    "val/cls_loss": 2.37579,
+    "val/dfl_loss": 0.00854,
+    "lr/pg0": 2.84371e-05,
+    "lr/pg1": 2.84371e-05,
+    "lr/pg2": 2.84371e-05
+  },
+  "export_errors": []
+}

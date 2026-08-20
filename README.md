@@ -97,6 +97,26 @@ projects/<PROJECT_ID>/
 
 ## 运行
 
+### 全新设备复现
+
+仓库使用 Git LFS 保存模型和原始视频。新设备必须先安装 Git LFS，随后执行：
+
+```powershell
+git clone https://github.com/xeeRyan/SOP-process-detection-YOLO.git
+cd SOP-process-detection-YOLO
+git lfs install
+git lfs pull
+uv sync --group build
+.\.venv\Scripts\python.exe scripts\verify_checkout.py
+```
+
+`verify_checkout.py` 会检查活动项目模型、基础模型、手部模型、测试视频、
+项目原始视频和已导入标注，并识别尚未下载的 Git LFS 指针文件。
+
+仓库保留可复现所需的源码、锁文件、项目配置、模型、原始视频和标注；
+`frames/`、`dataset/`、`runs/`、`outputs/`、`build/` 和 `dist/` 是可重新生成的产物，
+不会重复存入版本库。
+
 环境检查：
 
 ```powershell

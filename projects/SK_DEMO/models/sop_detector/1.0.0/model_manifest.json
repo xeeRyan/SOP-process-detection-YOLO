@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0",
+  "project_id": "SK_DEMO",
+  "model_id": "sop_detector",
+  "model_version": "1.0.0",
+  "created_at": "2026-08-03T02:37:26.775870+00:00",
+  "dataset_name": "dataset_sk_smoke_v1",
+  "dataset_manifest": "dataset/dataset_sk_smoke_v1/dataset_manifest.json",
+  "base_model": "E:\\Project\\SOPAID\\SOPAID\\models\\yolo26n.pt",
+  "artifacts": {
+    "best_pt": "models/sop_detector/1.0.0/best.pt",
+    "last_pt": "runs/sop_detector_1_0_0/weights/last.pt",
+    "torchscript": "models/sop_detector/1.0.0/best.torchscript",
+    "onnx": "models/sop_detector/1.0.0/best.onnx",
+    "engine": null
+  },
+  "training": {
+    "run_dir": "runs/sop_detector_1_0_0",
+    "results_csv": "runs/sop_detector_1_0_0/results.csv",
+    "args_yaml": "runs/sop_detector_1_0_0/args.yaml",
+    "log_path": "outputs/logs/train_20260803_103301_559614.log",
+    "parameters": {
+      "model": "E:\\Project\\SOPAID\\SOPAID\\models\\yolo26n.pt",
+      "data": "E:\\Project\\SOPAID\\SOPAID\\projects\\SK_DEMO\\dataset\\dataset_sk_smoke_v1\\data.yaml",
+      "project_dir": "E:\\Project\\SOPAID\\SOPAID\\projects\\SK_DEMO\\runs",
+      "run_name": "sop_detector_1_0_0",
+      "epochs": 100,
+      "batch": 8,
+      "imgsz": 640,
+      "workers": 0,
+      "device": null,
+      "optimizer": "auto",
+      "amp": true,
+      "val_ratio": null,
+      "images_dir": null,
+      "labels_dir": null,
+      "dataset_output_dir": null,
+      "copy_best_to": "E:\\Project\\SOPAID\\SOPAID\\projects\\SK_DEMO\\models\\sop_detector\\1.0.0\\best.pt",
+      "exist_ok": false,
+      "augmentations": {}
+    }
+  },
+  "validation_metrics": {
+    "epoch": 100.0,
+    "time": 252.614,
+    "train/box_loss": 1.30717,
+    "train/cls_loss": 2.00138,
+    "train/dfl_loss": 0.00492,
+    "metrics/precision(B)": 0.84263,
+    "metrics/recall(B)": 0.71305,
+    "metrics/mAP50(B)": 0.8021,
+    "metrics/mAP50-95(B)": 0.4175,
+    "val/box_loss": 1.96048,
+    "val/cls_loss": 2.48261,
+    "val/dfl_loss": 0.00868,
+    "lr/pg0": 2.84371e-05,
+    "lr/pg1": 2.84371e-05,
+    "lr/pg2": 2.84371e-05
+  },
+  "export_errors": [],
+  "converted_at": "2026-08-03T02:38:02.412146+00:00"
+}

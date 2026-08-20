@@ -35,19 +35,17 @@ frontend/**/obj/
 *.exp
 *.lib
 
-# Local datasets, videos, model weights and generated results
+# Rebuildable datasets and generated results. Source videos, imported labels and
+# model artifacts are versioned through Git LFS so a fresh clone can reproduce
+# the current projects.
 datasets/**
-videos/**
-models/**
 outputs/**
 runs/**
+/yolo26n.pt
 
-# Per-project generated media and training artifacts (keep project JSON configs tracked)
-projects/*/source_videos/**
+# Per-project rebuildable training artifacts
 projects/*/frames/**
-projects/*/annotations/**
 projects/*/dataset/**
-projects/*/models/**
 projects/*/runs/**
 projects/*/outputs/**
 projects/*/frames_manifest.json
@@ -60,5 +58,3 @@ Thumbs.db
 *.log
 *.rar
 *.lnk
-*.pt
-*.pth
