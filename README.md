@@ -102,7 +102,7 @@ projects/<PROJECT_ID>/
 仓库使用 Git LFS 保存模型和原始视频。新设备必须先安装 Git LFS，随后执行：
 
 ```powershell
-git clone https://github.com/xeeRyan/SOP-process-detection-YOLO.git
+git clone --branch agent/add-cpp-wrapper https://github.com/xeeRyan/SOP-process-detection-YOLO.git
 cd SOP-process-detection-YOLO
 git lfs install
 git lfs pull
